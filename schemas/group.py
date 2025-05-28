@@ -1,12 +1,26 @@
-from pydantic import BaseModel, UUID4
-from typing import Optional
+from pydantic import BaseModel
+from uuid import UUID
+from typing import List, Optional
 
 class GroupCreate(BaseModel):
     name: str
-    thesis_id: Optional[UUID4] = None
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = None
+    leader_id: Optional[UUID] = None
+
+
+class GroupMemberCreate(BaseModel):
+    student_id: UUID
+    is_leader: bool = False
+
 
 class GroupResponse(BaseModel):
-    id: UUID4
+    id: UUID
     name: str
-    thesis_id: Optional[UUID4] = None
-    leader_id: UUID4
+    leader_id: UUID
+
+class GroupMemberResponse(BaseModel):
+    group_id: UUID
+    student_id: UUID
+    is_leader: bool

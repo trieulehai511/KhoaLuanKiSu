@@ -1,85 +1,128 @@
+from datetime import datetime
 import uuid
 from fastapi import HTTPException,status
 from sqlalchemy import UUID
 from sqlalchemy.orm import Session
-from models.model import Thesis, User
-from schemas.thesis import ThesisCreate, ThesisUpdate
-
+from models.model import Information, LecturerInfo, Thesis, ThesisLecturer, User
+from schemas.thesis import ThesisCreate, ThesisResponse, ThesisUpdate
 
 def create(db: Session,thesis: ThesisCreate, lecturer_id: uuid.UUID):
-    lecturer = db.query(User).filter(User.id == lecturer_id, User.is_lecturer == True).first()
-
+    lecturer = db.query(User).filter(User.id == lecturer_id, User.user_type == 3).first()
     if not lecturer:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lecturer not found or invalid")
-
     db_thesis = Thesis(
-        id=uuid.uuid4(),
-        title = thesis.title,
-        description = thesis.description,
-        lecturer_id = lecturer_id,
-        status = 1
+        title=thesis.title,
+        description=thesis.description,
+        thesis_type=thesis.thesis_type,
+        start_date=thesis.start_date,
+        end_date=thesis.end_date,
+        status=thesis.status,
+        create_by=lecturer_id,
+        create_datetime=datetime.utcnow()
     )
     db.add(db_thesis)
     db.commit()
     db.refresh(db_thesis)
     return db_thesis
 
-def get(db: Session, thesis_id: uuid.UUID):
-    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
-    if not thesis:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
-    return thesis
-
-def get_creator(db: Session, thesis_id: uuid.UUID):
-    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
-    if not thesis:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
-    
-    # Lấy thông tin lecturer (người tạo)
-    lecturer = db.query(User).filter(User.id == thesis.lecturer_id).first()
-    if not lecturer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecturer not found")
-
-    return {
-        "thesis_id": thesis.id,
-        "thesis_title": thesis.title,
-        "creator": {
-            "id": lecturer.id,
-            "user_name": lecturer.user_name,
-            "is_lecturer": lecturer.is_lecturer
-        }
-    }
-
-def get_all(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(Thesis).offset(skip).limit(limit).all()
-
-def update(db: Session, thesis_id: uuid.UUID, thesis: ThesisUpdate, user_id: uuid.UUID):
+def update_thesis(db: Session, thesis_id: UUID, thesis: ThesisUpdate):
+    """
+    Cập nhật thông tin một luận văn (thesis).
+    """
     db_thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not db_thesis:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
-    
-    # Chỉ cho phép giảng viên hoặc admin cập nhật (kiểm tra quyền trong router)
-    if db_thesis.lecturer_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this thesis")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thesis not found"
+        )
 
-    update_data = thesis.dict(exclude_unset=True)
-    for key, value in update_data.items():
+    for key, value in thesis.dict(exclude_unset=True).items():
         setattr(db_thesis, key, value)
+    db_thesis.update_datetime = datetime.utcnow()
+
     db.commit()
     db.refresh(db_thesis)
     return db_thesis
 
-def delete(db: Session, thesis_id: uuid.UUID, user_id: uuid.UUID):
+def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
+    """
+    Lấy thông tin một luận văn (thesis) theo ID, bao gồm thông tin của tất cả giảng viên hướng dẫn.
+    """
+    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    if not thesis:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thesis not found"
+        )
+    thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
+    instructors = []
+    for tl in thesis_lecturers:
+        lecturer_info = db.query(LecturerInfo).filter(LecturerInfo.id == tl.lecturer_id).first()
+        if lecturer_info:
+            # Lấy thông tin người dùng từ bảng Information
+            user_info = db.query(Information).filter(Information.user_id == lecturer_info.user_id).first()
+            if user_info:
+                instructors.append({
+                    "name": f"{user_info.first_name} {user_info.last_name}",
+                    "email": lecturer_info.email,
+                    "department": lecturer_info.department,
+                    "phone": lecturer_info.phone
+                })
+    return ThesisResponse(
+        id=thesis.id,
+        topicNumber=thesis.thesis_type,
+        status="Chưa có người đăng ký" if thesis.status == 1 else "Đã có người đăng ký",
+        name=thesis.title,
+        description=thesis.description,
+        start_date=thesis.start_date,
+        end_date=thesis.end_date,
+        instructors=instructors
+    )
+
+def get_all_theses(db: Session) -> list[ThesisResponse]:
+    """
+    Lấy danh sách tất cả các luận văn (theses) với thông tin của tất cả giảng viên hướng dẫn.
+    """
+    theses = db.query(Thesis).all()
+    thesis_responses = []
+    for thesis in theses:
+        thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
+        instructors = []
+        for tl in thesis_lecturers:
+            lecturer_info = db.query(LecturerInfo).filter(LecturerInfo.id == tl.lecturer_id).first()
+            if lecturer_info:
+                user_info = db.query(Information).filter(Information.user_id == lecturer_info.user_id).first()
+                if user_info:
+                    instructors.append({
+                        "name": f"{user_info.first_name} {user_info.last_name}",
+                        "email": lecturer_info.email,
+                        "department": lecturer_info.department,
+                        "phone": lecturer_info.phone
+                    })
+
+        thesis_responses.append({
+            "id": thesis.id,
+            "thesis_type": thesis.thesis_type,
+            "status": "Chưa có người đăng ký" if thesis.status == 1 else "Đã có người đăng ký",
+            "name": thesis.title,
+            "description": thesis.description,
+            "start_date": thesis.start_date,
+            "end_date": thesis.end_date,
+            "instructors": instructors
+        })
+
+    return thesis_responses
+
+def delete_thesis(db: Session, thesis_id: UUID):
+    """
+    Xóa một luận văn (thesis).
+    """
     db_thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not db_thesis:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thesis not found")
-    
-    # Chỉ cho phép giảng viên hoặc admin xóa (kiểm tra quyền trong router)
-    if db_thesis.lecturer_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this thesis")
-
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thesis not found"
+        )
     db.delete(db_thesis)
     db.commit()
     return {"message": "Thesis deleted successfully"}
-
-

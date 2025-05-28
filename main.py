@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from db.database import Base, engine
-from routers import auth, group, sysuser, thesis
+from routers import auth, group, information, invite, sys_role, sys_role_function, sys_user_role, sysuser, thesis, function
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from fastapi_jwt_auth import AuthJWT
@@ -38,8 +38,7 @@ async def startup():
     AuthJWT.load_config(lambda: [
         ("authjwt_secret_key", SECRET_KEY),
         ("authjwt_token_location", ["cookies"]),  # Chỉ định token được tìm trong cookies
-        ("authjwt_cookie_csrf_protect", False),   # Tắt CSRF protection cho cookies nếu không cần thiết hoặc xử lý riêng
-                                                # Cân nhắc bật True cho production và xử lý CSRF token
+        ("authjwt_cookie_csrf_protect", False),   # Tắt CSRF protection cho cookies nếu không cần thiết hoặc xử lý riêng                                              # Cân nhắc bật True cho production và xử lý CSRF token
         ("authjwt_access_token_expires", 1800),   # Thời gian hết hạn của access token (30 phút)
         ("authjwt_refresh_token_expires", 604800), # Thời gian hết hạn của refresh token (7 ngày)
     ])
@@ -51,7 +50,13 @@ list_router = [
     sysuser.router,
     auth.router,
     thesis.router,
-    group.router
+    group.router,
+    invite.router,
+    information.router,
+    sys_role.router,
+    function.router,
+    sys_user_role.router,
+    sys_role_function.router
 ]
 for router in list_router:
     app.include_router(router)

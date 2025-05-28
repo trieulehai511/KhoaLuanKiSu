@@ -1,37 +1,40 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from db.database import get_db
-from services.group import create_group, update_group_thesis, get_group_by_id
-from schemas.group import GroupCreate, GroupResponse
+from services.group import (
+    create_group, add_member, remove_member, get_members, transfer_leader
+)
+from schemas.group import GroupCreate, GroupMemberCreate, GroupMemberResponse, GroupResponse
 from routers.auth import PathChecker, get_current_user
-from models.model import Group, User
+from models.model import User
+from uuid import UUID
 
 router = APIRouter(
     prefix="/group",
     tags=["group"]
 )
 
-@router.post("/", response_model=GroupResponse)
-def create_new_group(group: GroupCreate, db: Session = Depends(get_db), user: User = Depends(PathChecker("/group"))):
-    """Tạo nhóm mới (chỉ dành cho nhóm trưởng)"""
+@router.post("",response_model=GroupResponse,dependencies=[Depends(PathChecker("/group"))])
+def create_new_group(group: GroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Tạo nhóm mới"""
     return create_group(db, group, user.id)
 
-@router.put("/{group_id}/thesis", response_model=GroupResponse)
-def update_group(group_id: str, thesis_id: str, db: Session = Depends(get_db), user: User = Depends(PathChecker("/group"))):
-    """Cập nhật đề tài của nhóm"""
-    return update_group_thesis(group_id, thesis_id, db)
+@router.post("/{group_id}/add-member",response_model=GroupMemberResponse)
+def add_group_member(group_id: UUID, member: GroupMemberCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Thêm thành viên vào nhóm"""
+    return add_member(db, group_id, member, user.id)
 
-@router.get("/{group_id}", response_model=GroupResponse)
-def get_group(group_id: str, db: Session = Depends(get_db), user: User = Depends(PathChecker("/group"))):
-    """Lấy thông tin nhóm theo ID"""
-    return get_group_by_id(group_id, db)
+@router.delete("/{group_id}/remove-member/{member_id}")
+def remove_group_member(group_id: UUID, member_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Xóa thành viên khỏi nhóm"""
+    return remove_member(db, group_id, member_id, user.id)
 
-@router.delete("/{group_id}")
-def delete_group(group_id: str, db: Session = Depends(get_db), user: User = Depends(PathChecker("/group"))):
-    """Xóa nhóm (chỉ dành cho nhóm trưởng)"""
-    group = db.query(Group).filter(Group.id == group_id, Group.leader_id == user.id).first()
-    if not group:
-        raise HTTPException(status_code=404, detail="Nhóm không tồn tại hoặc bạn không phải là trưởng nhóm")
-    db.delete(group)
-    db.commit()
-    return {"message": "Nhóm đã được xóa thành công"}
+@router.get("/{group_id}/members")
+def list_group_members(group_id: UUID, db: Session = Depends(get_db)):
+    """Lấy danh sách thành viên của nhóm"""
+    return get_members(db, group_id)
+
+@router.put("/{group_id}/transfer-leader/{new_leader_id}")
+def change_group_leader(group_id: UUID, new_leader_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Chuyển quyền nhóm trưởng"""
+    return transfer_leader(db, group_id, new_leader_id, user.id)
