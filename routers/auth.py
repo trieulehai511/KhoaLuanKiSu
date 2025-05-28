@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from models.model import SysFunction,SysRole, SysRoleFunction, SysUserRole, User, RefreshToken
@@ -8,6 +8,7 @@ import bcrypt
 import jwt 
 from datetime import datetime, timedelta
 from db.database import get_db
+from schemas.token import RefreshTokenRequest
 from services.sysuser import create_user
 from fastapi import Request
 
@@ -166,20 +167,16 @@ def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+import hashlib
+from datetime import datetime, timedelta
+#... các import khác của bạn
+
 @router.post("/login")
 def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
     """Xử lý đăng nhập và cấp token"""
     db_user = db.query(User).filter(User.user_name == user.user_name).first()
 
-    # Kiểm tra nếu không tìm thấy người dùng
-    if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
-        )
-
-    # Kiểm tra mật khẩu
-    if not bcrypt.checkpw(user.password.encode('utf-8'), db_user.password.encode('utf-8')):
+    if not db_user or not bcrypt.checkpw(user.password.encode('utf-8'), db_user.password.encode('utf-8')):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"
@@ -196,18 +193,30 @@ def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
     access_token = create_access_token(user_id=str(db_user.id), user_name=db_user.user_name)
     refresh_token = create_refresh_token(user_id=str(db_user.id), user_name=db_user.user_name)
 
-    # Lưu token mới vào cơ sở dữ liệu
-    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    # --- BẮT ĐẦU THAY ĐỔI ---
+
+    # 1. Băm refresh token trước khi lưu
+    hashed_refresh_token = hashlib.sha256(refresh_token).hexdigest()
+
+    # Tính thời gian hết hạn
+    refresh_expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    access_expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # 2. Lưu refresh token đã được băm vào cơ sở dữ liệu
     db_refresh_token = RefreshToken(
         user_id=db_user.id,
-        token=refresh_token,
-        expires_at=expires_at,
+        token=hashed_refresh_token,  # Lưu refresh token đã được băm
+        access_token=access_token,      # Lưu access token (JWT thô)
+        expires_at=refresh_expires_at,
+        access_expires_at=access_expires_at,
         is_revoked=False
     )
     db.add(db_refresh_token)
     db.commit()
 
-    # Lưu token vào cookie
+    # --- KẾT THÚC THAY ĐỔI ---
+
+    # Gửi token gốc (chưa băm) cho người dùng qua cookie
     response.set_cookie(
         key="access_token",
         value=access_token.decode('utf-8') if isinstance(access_token, bytes) else access_token,
@@ -233,38 +242,54 @@ def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
     }
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 @router.post("/refresh")
-def refresh_token(response: Response, refresh_token: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Làm mới access token"""
+def refresh_token(
+    response: Response,
+    # Giả sử bạn lấy refresh token từ cookie hoặc body
+    refresh_token_from_request: str = Cookie(None, alias="refresh_token"), 
+    db: Session = Depends(get_db)
+):
+    if not refresh_token_from_request:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token not found"
+        )
+
+    logger.info("Starting refresh token process (reusable strategy)")
+    
     try:
-        # Giải mã token từ refresh token
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
+        # Băm token nhận được từ request để so sánh với DB
+        hashed_input_token = hashlib.sha256(refresh_token_from_request.encode()).hexdigest()
 
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: user ID not found"
-            )
-
-        # Kiểm tra token trong cơ sở dữ liệu
+        # Tìm token trong DB
         db_refresh_token = db.query(RefreshToken).filter(
-            RefreshToken.token == refresh_token,
-            RefreshToken.user_id == user_id,
-            RefreshToken.is_revoked == False,
-            RefreshToken.expires_at > datetime.utcnow()
+            RefreshToken.token == hashed_input_token,
+            RefreshToken.is_revoked == False, # Kiểm tra chưa bị thu hồi thủ công (vd: khi người dùng đổi mật khẩu)
+            RefreshToken.expires_at > datetime.utcnow() # Kiểm tra còn hạn
         ).first()
 
         if not db_refresh_token:
+            logger.error("Refresh token not found, invalid, or expired")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or revoked refresh token"
+                detail="Invalid, revoked, or expired refresh token"
             )
 
-        # Tạo access token mới
-        access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
+        # Lấy thông tin user từ user_id trong refresh token
+        user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-        # Cập nhật token vào cookie
+        # *** ĐIỂM QUAN TRỌNG ***
+        # Chỉ tạo access token mới, không làm gì với refresh token trong DB
+        access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
+        logger.info(f"New access token created for user {user.user_name}")
+
+        # Cập nhật access token vào cookie
         response.set_cookie(
             key="access_token",
             value=access_token,
@@ -280,13 +305,20 @@ def refresh_token(response: Response, refresh_token: str, db: Session = Depends(
         }
 
     except jwt.ExpiredSignatureError:
+        logger.error("Refresh token has expired (JWT validation)")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token has expired"
         )
+    except (jwt.PyJWTError, Exception) as e:
+        logger.error(f"An error occurred during token refresh: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
 
-@router.post("/logout", dependencies=[Depends(PathChecker("/auth/logout"))])
-def logout(response: Response, refresh_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db), user: User = Depends(PathChecker("/auth/logout"))):
+@router.post("/logout" )
+def logout(response: Response, refresh_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     """Xử lý đăng xuất"""
     db_refresh_token = db.query(RefreshToken).filter(RefreshToken.token == refresh_token).first()
     if db_refresh_token:

@@ -28,7 +28,7 @@ def create_function_endpoint(
 ):
     return create_function(db, function, user.id)
 
-@router.get("/{function_id}", response_model=FunctionResponse)
+@router.get("/get_by_id/{function_id}", response_model=FunctionResponse)
 def get_function_by_id_endpoint(function_id: int, db: Session = Depends(get_db)):
     """
     API để lấy thông tin một chức năng (function) theo ID.

@@ -81,8 +81,10 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID, nullable=False)
-    token = Column(String, nullable=False, index=True)
-    expires_at = Column(DateTime, nullable=False)
+    token = Column(String, nullable=False, index=True)  # Lưu refresh token
+    access_token = Column(String, nullable=True, index=True)  # Lưu access token
+    expires_at = Column(DateTime, nullable=False)  # Thời gian hết hạn của refresh token
+    access_expires_at = Column(DateTime, nullable=True)  # Thời gian hết hạn của access token
     is_revoked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
 

@@ -68,9 +68,9 @@ def get_function_by_id(db: Session, function_id: int) -> FunctionResponse:
 
 def get_all_functions(db: Session) -> List[FunctionResponse]:
     """
-    Lấy danh sách tất cả chức năng.
+    Lấy danh sách tất cả chức năng có type là 'GROUP'.
     """
-    functions = db.query(SysFunction).all()
+    functions = db.query(SysFunction).filter(SysFunction.type == "GROUP").all()
     return [FunctionResponse.from_orm(function) for function in functions]
 
 def delete_function(db: Session, function_id: int):
