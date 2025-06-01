@@ -17,6 +17,10 @@ router = APIRouter(
     prefix="/auth",
     tags=["auth"]
 )
+import hashlib
+from datetime import datetime, timedelta
+import logging
+logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -181,10 +185,6 @@ def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-import hashlib
-from datetime import datetime, timedelta
-#... các import khác của bạn
-
 @router.post("/login")
 def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
     """Xử lý đăng nhập và cấp token"""
@@ -223,7 +223,7 @@ def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
         httponly=True,
         secure=True,      
         samesite="None",    
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES*60
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES*60+600
     )
 
     response.set_cookie(
@@ -232,18 +232,13 @@ def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
         httponly=True,
         secure=True,
         samesite="None",
-        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60  # 30 ngày
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 
     )
     return {
         "message": "Login successful",
         "access_token": access_token,
         "refresh_token": refresh_token
     }
-
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 @router.post("/refresh")
 def refresh_token(
@@ -257,61 +252,144 @@ def refresh_token(
             detail="Refresh token not found"
         )
 
-    logger.info("🔄 Starting refresh token process")
-
     try:
-        hashed_input_token = hashlib.sha256(refresh_token_from_request.encode()).hexdigest()
-        db_refresh_token = db.query(RefreshToken).filter(
-            RefreshToken.token == hashed_input_token,
-            RefreshToken.is_revoked == False,
-            RefreshToken.expires_at > datetime.utcnow()
-        ).first()
+        payload = jwt_decode(
+            refresh_token_from_request,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": True}
+        )
+        user_id = payload.get("uuid")
+        user_name = payload.get("name")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid refresh token payload")
 
-        if not db_refresh_token:
-            logger.warning("⚠️ Refresh token không hợp lệ hoặc đã hết hạn")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid, revoked, or expired refresh token"
-            )
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token has expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-        # Lấy thông tin người dùng
-        user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    hashed_input_token = hashlib.sha256(refresh_token_from_request.encode()).hexdigest()
+    db_refresh_token = db.query(RefreshToken).filter(
+        RefreshToken.token == hashed_input_token,
+        RefreshToken.is_revoked == False,
+        RefreshToken.expires_at > datetime.utcnow()
+    ).first()
 
-        # ✅ Tạo access token mới
-        access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
-        access_expires_at = datetime.utcnow() + timedelta(hours=1)
+    if not db_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid, revoked, or expired refresh token"
+        )
 
-        # ✅ Cập nhật vào DB
-        db_refresh_token.access_token = access_token
-        db_refresh_token.access_expires_at = access_expires_at
-        db.commit()
+    user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
+    access_expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
-        # ✅ Ghi cookie mới
-        response.set_cookie(
+    db_refresh_token.access_token = access_token
+    db_refresh_token.access_expires_at = access_expires_at
+
+    extend_refresh = False
+    if db_refresh_token.expires_at - datetime.utcnow() < timedelta(days=1):
+        new_refresh_token = create_refresh_token(user_id=str(user.id), user_name=user.user_name)
+        db_refresh_token.token = hashlib.sha256(new_refresh_token.encode()).hexdigest()
+        db_refresh_token.expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        extend_refresh = True
+
+    db.commit()
+
+    response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,       # ✅ Cho phép chạy trên HTTP
-        samesite="None",     # ✅ Cho phép gửi qua cross-origin ở local
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES*60 + 600 
+        secure=True,
+        samesite="None",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 600
     )
 
-
-        logger.info(f"✅ Access token mới đã tạo cho user {user.user_name}")
-
-        return {
-            "message": "Token refreshed successfully",
-            "access_token": access_token
-        }
-
-    except ExpiredSignatureError:
-        logger.error("❌ Refresh token đã hết hạn (JWT decode)")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has expired"
+    if extend_refresh:
+        response.set_cookie(
+            key="refresh_token",
+            value=new_refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="None",
+            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
         )
+
+    return {
+        "message": "Token refreshed successfully",
+        "access_token": access_token
+    }
+# @router.post("/refresh")
+# def refresh_token(
+#     response: Response,
+#     refresh_token_from_request: str = Cookie(None, alias="refresh_token"),
+#     db: Session = Depends(get_db)
+# ):
+#     if not refresh_token_from_request:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Refresh token not found"
+#         )
+
+#     logger.info("🔄 Starting refresh token process")
+
+#     try:
+#         hashed_input_token = hashlib.sha256(refresh_token_from_request.encode()).hexdigest()
+#         db_refresh_token = db.query(RefreshToken).filter(
+#             RefreshToken.token == hashed_input_token,
+#             RefreshToken.is_revoked == False,
+#             RefreshToken.expires_at > datetime.utcnow()
+#         ).first()
+
+#         if not db_refresh_token:
+#             logger.warning("⚠️ Refresh token không hợp lệ hoặc đã hết hạn")
+#             raise HTTPException(
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#                 detail="Invalid, revoked, or expired refresh token"
+#             )
+
+#         # Lấy thông tin người dùng
+#         user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
+#         if not user:
+#             raise HTTPException(status_code=404, detail="User not found")
+
+#         # ✅ Tạo access token mới
+#         access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
+#         access_expires_at = datetime.utcnow() + timedelta(hours=1)
+
+#         # ✅ Cập nhật vào DB
+#         db_refresh_token.access_token = access_token
+#         db_refresh_token.access_expires_at = access_expires_at
+#         db.commit()
+
+#         # ✅ Ghi cookie mới
+#         response.set_cookie(
+#         key="access_token",
+#         value=access_token,
+#         httponly=True,
+#         secure=True,     
+#         samesite="None",     
+#         max_age=ACCESS_TOKEN_EXPIRE_MINUTES*60+600 
+#     )
+
+
+#         logger.info(f"✅ Access token mới đã tạo cho user {user.user_name}")
+
+#         return {
+#             "message": "Token refreshed successfully",
+#             "access_token": access_token
+#         }
+
+#     except ExpiredSignatureError:
+#         logger.error("❌ Refresh token đã hết hạn (JWT decode)")
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Refresh token has expired"
+#         )
     
 @router.post("/logout" )
 def logout(response: Response, refresh_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):

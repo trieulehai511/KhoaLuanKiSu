@@ -135,32 +135,6 @@ class SysRoleFunction(Base):
     created_by = Column(UUID, nullable=True) # Hoặc UUID
     create_datetime = Column(DateTime, default=func.now())
 
-# class SysRole(Base):
-#     __tablename__ = "sys_role"
-#     id = Column(Integer, primary_key=True, index=True)
-#     name = Column(String, unique=True, index=True)  # admin, user, lecture
-#     create_datetime = Column(DateTime, default=func.now())
-#     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
-
-# class SysFunction(Base):
-#     __tablename__ = "sys_function"
-#     id = Column(Integer, primary_key=True, index=True)
-#     name = Column(String, unique=True, index=True)  # API path, e.g., "/thesis/propose"
-#     create_datetime = Column(DateTime, default=func.now())
-#     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
-
-# class SysUserRole(Base):
-#     __tablename__ = "sys_user_role"
-#     id = Column(Integer, primary_key=True, index=True)
-#     user_id = Column(UUID, nullable=False)
-#     role_id = Column(Integer,nullable=False)
-
-# class SysRoleFunction(Base):
-#     __tablename__ = "sys_role_function"
-#     id = Column(Integer, primary_key=True, index=True)
-#     role_id = Column(Integer,nullable=False)
-#     function_id = Column(Integer,nullable=False)
-
 class Thesis(Base):
     __tablename__ = "thesis"
     id = Column(UUID, primary_key=True, default=uuid.uuid4, index=True)

@@ -14,6 +14,13 @@ class SysRoleBase(BaseModel):
 class SysRoleCreate(SysRoleBase):
     pass
 
+class SysRoleCreateWithFunctions(BaseModel):
+    role_code: str
+    role_name: str
+    description: Optional[str] = None
+    status: int
+    function_ids: List[int]
+    
 class SysRoleUpdate(SysRoleBase):
     role_code: Optional[str] = None
     role_name: Optional[str] = None

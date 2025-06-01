@@ -81,7 +81,96 @@ def create_role_functions(
         function=function_tree
     )
 
+def update_role_and_functions(
+    db: Session,
+    role_id: int,
+    update_data: SysRoleFunctionUpdate,
+    user_id: str
+) -> RoleResponseTree:
+    # 1. Kiểm tra vai trò tồn tại
+    role = db.query(SysRole).filter(SysRole.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Vai trò không tồn tại.")
 
+    # 2. ✅ Cập nhật thông tin vai trò nếu có
+    if update_data.role_name is not None:
+        role.role_name = update_data.role_name
+    if update_data.description is not None:
+        role.description = update_data.description
+    if update_data.status is not None:
+        role.status = update_data.status
+    role.update_datetime = datetime.utcnow()
+
+    # 3. ✅ Cập nhật chức năng (function_ids) giống logic cũ
+    existing_links = db.query(SysRoleFunction).filter_by(role_id=role_id).all()
+    existing_function_ids = {link.function_id for link in existing_links}
+    new_function_ids = set(update_data.function_ids)
+
+    # 3.1 Xoá những function không còn trong danh sách mới
+    to_delete = existing_function_ids - new_function_ids
+    if to_delete:
+        db.query(SysRoleFunction).filter(
+            SysRoleFunction.role_id == role_id,
+            SysRoleFunction.function_id.in_(to_delete)
+        ).delete(synchronize_session=False)
+
+    # 3.2 Thêm mới những function chưa từng gán
+    to_add = new_function_ids - existing_function_ids
+    for fid in to_add:
+        db.add(SysRoleFunction(
+            role_id=role_id,
+            function_id=fid,
+            status=update_data.status or 1,
+            created_by=user_id,
+            create_datetime=datetime.utcnow()
+        ))
+
+    # 3.3 Cập nhật lại trạng thái các function vẫn giữ nguyên
+    db.query(SysRoleFunction).filter(
+        SysRoleFunction.role_id == role_id,
+        SysRoleFunction.function_id.in_(existing_function_ids & new_function_ids)
+    ).update({SysRoleFunction.status: update_data.status}, synchronize_session=False)
+
+    db.commit()
+
+    # 4. Dựng lại cấu trúc trả về RoleResponseTree
+    function_ids = db.query(SysRoleFunction.function_id).filter_by(role_id=role.id).all()
+    function_ids = [fid[0] for fid in function_ids]
+    all_functions = db.query(SysFunction).all()
+    assigned_ids = set(function_ids)
+
+    function_dict = {
+        f.id: FunctionResponseTree(
+            id=f.id,
+            name=f.name,
+            path=f.path,
+            type=f.type,
+            parent_id=f.parent_id,
+            description=f.description,
+            status="Hoạt động" if f.status == 1 else "Ngừng hoạt động",
+            is_assigned=(f.id in assigned_ids),
+            children=[]
+        )
+        for f in all_functions
+    }
+
+    for fn in function_dict.values():
+        if fn.parent_id and fn.parent_id in function_dict:
+            function_dict[fn.parent_id].children.append(fn)
+
+    roots = [
+        fn for fn in function_dict.values()
+        if fn.parent_id is None and has_assigned_child(fn, assigned_ids)
+    ]
+
+    return RoleResponseTree(
+        id=role.id,
+        roleId=role.role_code,
+        roleName=role.role_name,
+        description=role.description,
+        status="Hoạt động" if role.status == 1 else "Ngừng hoạt động",
+        function=roots
+    )
 def update_role_function(
     db: Session,
     role_id: int,
