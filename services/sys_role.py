@@ -4,7 +4,7 @@ from fastapi import HTTPException,status
 from sqlalchemy import UUID
 from sqlalchemy.orm import Session
 from models.model import SysRole, SysRoleFunction
-from schemas.sys_role import FunctionResponseTree, RoleResponseTree, SysRoleCreate
+from schemas.sys_role import FunctionResponseTree, RoleResponseTree, SysRoleCreate, SysRoleCreateWithFunctions
 from sqlalchemy.orm import Session
 from models.model import SysRole, SysFunction
 from fastapi import HTTPException, status
@@ -84,7 +84,7 @@ def get_role_with_functions(db: Session, role_id: int) -> RoleResponseTree:
         type=function.type,
         parent_id=function.parent_id,
         description=function.description,
-        status="Hoạt động" if function.status == 1 else "Ngừng hoạt động",
+        status= function.status,
         children=[]
     ) for function in functions}
 
@@ -102,7 +102,7 @@ def get_role_with_functions(db: Session, role_id: int) -> RoleResponseTree:
         roleId=role.role_code,
         roleName=role.role_name,
         description=role.description,
-        status="Hoạt động" if role.status == 1 else "Ngừng hoạt động",
+        status=role.status,
         function=tree
     )
 
@@ -291,7 +291,73 @@ def get_all_roles(db: Session) -> List[RoleResponseTree]:
 
     return role_responses
 
+def create_role_with_functions(
+    db: Session,
+    role_data: SysRoleCreateWithFunctions,
+    user_id: str
+) -> RoleResponseTree:
+    existing_role = db.query(SysRole).filter(SysRole.role_code == role_data.role_code).first()
+    if existing_role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mã role đã tồn tại"
+        )
 
+    new_role = SysRole(
+        role_code=role_data.role_code,
+        role_name=role_data.role_name,
+        description=role_data.description,
+        status=role_data.status,
+        created_by=user_id,
+        create_datetime=datetime.utcnow(),
+        update_datetime=datetime.utcnow()
+    )
+    db.add(new_role)
+    db.commit()
+    db.refresh(new_role)
+
+    # Gán chức năng
+    for function_id in role_data.function_ids:
+        db.add(SysRoleFunction(
+            role_id=new_role.id,
+            function_id=function_id,
+            status=1,
+            created_by=user_id,
+            create_datetime=datetime.utcnow()
+        ))
+
+    db.commit()
+
+    # Truy vấn lại các chức năng vừa gán
+    functions = db.query(SysFunction).filter(SysFunction.id.in_(role_data.function_ids)).all()
+
+    def build_tree(items, parent_id=None):
+        tree = []
+        for item in items:
+            if item.parent_id == parent_id:
+                node = FunctionResponseTree(
+                    id=item.id,
+                    name=item.name,
+                    path=item.path,
+                    type=item.type,
+                    parent_id=item.parent_id,
+                    description=item.description,
+                    status="enabled" if item.status == 1 else "disabled",
+                    is_assigned=True,
+                    children=[]
+                )
+                node.children = build_tree(items, item.id)
+                tree.append(node)
+        return tree
+
+    return RoleResponseTree(
+        id=new_role.id,
+        roleId=new_role.role_code,
+        roleName=new_role.role_name,
+        description=new_role.description,
+        status="Hoạt động" if new_role.status == 1 else "Ngừng hoạt động",
+        function=build_tree(functions)
+    )
 
 
                 

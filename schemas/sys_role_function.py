@@ -19,8 +19,10 @@ class AssignFunctionsResponse(BaseModel):
     assigned_function_ids: List[int]
 
 class SysRoleFunctionUpdate(BaseModel):
-    function_ids: List[int]
-    status: Optional[int] = 1  
+    role_name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[int] = None
+    function_ids: List[int] 
 
 class SysRoleFunctionResponse(SysRoleFunctionBase):
     id: int 

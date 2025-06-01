@@ -2,10 +2,12 @@ from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from db.database import get_db
-from schemas.sys_role import RoleResponseTree, SysRoleCreate, SysRoleResponse
-from services.sys_role import create_role, delete_role, get_all_roles, get_all_roles_create, get_role_with_functions, update_role
+from schemas.sys_role import RoleResponseTree, SysRoleCreate, SysRoleCreateWithFunctions, SysRoleResponse
+from schemas.sys_role_function import SysRoleFunctionUpdate
+from services.sys_role import create_role, create_role_with_functions, delete_role, get_all_roles, get_all_roles_create, get_role_with_functions, update_role
 from routers.auth import get_current_user
 from models.model import User
+from services.sys_role_function import update_role_and_functions
 # from utils.path_checker import PathChecker  
 router = APIRouter(
     prefix="/roles",
@@ -20,14 +22,14 @@ def create_user_role(
 ):
     return create_role(db, role, user.id)
 
-@router.put("/{role_id}", response_model=SysRoleResponse)
-def update_user_role(
+@router.put("/{role_id}", response_model=RoleResponseTree)
+def update_role_full(
     role_id: int,
-    role: SysRoleCreate,
+    update_data: SysRoleFunctionUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
-    return update_role(db, role_id, role, user.id)
+    return update_role_and_functions(db=db, role_id=role_id, update_data=update_data, user_id=str(current_user.id))
 
 @router.delete("/{role_id}")
 def delete_user_role(
@@ -62,6 +64,14 @@ def get_all_roles_endpoint(db: Session = Depends(get_db), user: User = Depends(g
     API để lấy danh sách tất cả các vai trò (roles) với thông tin các chức năng liên quan.
     """
     return get_all_roles(db)
+
+@router.post("/create-with-functions", response_model=RoleResponseTree)
+def create_role_with_functions_endpoint(
+    data: SysRoleCreateWithFunctions,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return create_role_with_functions(db, data, current_user.id)
 
 
 
