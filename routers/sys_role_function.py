@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from db.database import get_db
 from models.model import User
+from schemas.sys_role import RoleResponseTree
 from schemas.sys_role_function import SysRoleFunctionCreate, SysRoleFunctionUpdate, SysRoleFunctionResponse
 from services.sys_role_function import (
-    create_role_function,
+    create_role_functions,
     update_role_function,
     get_role_function_by_id,
     get_all_role_functions,
@@ -18,27 +19,24 @@ router = APIRouter(
     tags=["role-functions"]
 )
 
-@router.post("/", response_model=SysRoleFunctionResponse)
-def create_role_function_endpoint(
-    role_function: SysRoleFunctionCreate,
+@router.post("/", response_model=RoleResponseTree)
+def assign_functions_to_role_and_return_tree(
+    role_function_data: SysRoleFunctionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    API để tạo mới một liên kết giữa vai trò và chức năng.
-    """
-    return create_role_function(db, role_function, current_user.id)
+    return create_role_functions(db, role_function_data, current_user.id)
 
-@router.put("/{role_function_id}", response_model=SysRoleFunctionResponse)
+
+@router.put("/update-role/{role_id}", response_model=RoleResponseTree)
 def update_role_function_endpoint(
-    role_function_id: int,
-    role_function: SysRoleFunctionUpdate,
-    db: Session = Depends(get_db)
+    role_id: int,
+    update_data: SysRoleFunctionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """
-    API để cập nhật trạng thái của một liên kết giữa vai trò và chức năng.
-    """
-    return update_role_function(db, role_function_id, role_function)
+    return update_role_function(db, role_id, update_data, current_user.id)
+
 
 @router.get("/{role_function_id}", response_model=SysRoleFunctionResponse)
 def get_role_function_endpoint(

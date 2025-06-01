@@ -17,19 +17,21 @@ if not ALGORITHM:
 
 def create_access_token(user_id: str, user_name: str, expires_delta: Optional[timedelta] = None):
     to_encode = {"uuid": user_id, "name": user_name}
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    if isinstance(encoded_jwt, bytes):
+        encoded_jwt = encoded_jwt.decode("utf-8")  # ✅ quan trọng
+
     return encoded_jwt
+
 
 def create_refresh_token(user_id: str, user_name: str, expires_delta: Optional[timedelta] = None):
     to_encode = {"uuid": user_id, "name": user_name}
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
-    else:
+    else: 
         expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

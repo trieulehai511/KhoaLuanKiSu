@@ -38,6 +38,7 @@ class FunctionResponseTree(BaseModel):
     parent_id: Optional[int] = None
     description: Optional[str] = None
     status: str
+    is_assigned: Optional[bool] = False
     children: Optional[List["FunctionResponseTree"]] = []
 
     class Config:

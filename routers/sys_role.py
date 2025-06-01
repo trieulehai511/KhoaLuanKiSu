@@ -1,8 +1,9 @@
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from db.database import get_db
 from schemas.sys_role import RoleResponseTree, SysRoleCreate, SysRoleResponse
-from services.sys_role import create_role, delete_role, get_role_with_functions, update_role
+from services.sys_role import create_role, delete_role, get_all_roles, get_all_roles_create, get_role_with_functions, update_role
 from routers.auth import get_current_user
 from models.model import User
 # from utils.path_checker import PathChecker  
@@ -40,12 +41,32 @@ def delete_user_role(
 @router.get("/{role_id}", response_model=RoleResponseTree)
 def get_role_with_functions_endpoint(
     role_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
     """
     API để lấy thông tin vai trò và các chức năng liên quan.
     """
     return get_role_with_functions(db, role_id)
+
+@router.get("/assign/permission", response_model=List[RoleResponseTree])
+def get_all_roles_endpoint(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    API để lấy danh sách tất cả các vai trò (roles) với thông tin các chức năng liên quan.
+    """
+    return get_all_roles_create(db)
+
+@router.get("/", response_model=List[RoleResponseTree])
+def get_all_roles_endpoint(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    API để lấy danh sách tất cả các vai trò (roles) với thông tin các chức năng liên quan.
+    """
+    return get_all_roles(db)
+
+
+
+
+
 
 
 

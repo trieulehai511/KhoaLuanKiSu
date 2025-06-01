@@ -59,7 +59,8 @@ def update_function_endpoint(
 
 @router.get("/", response_model=List[FunctionResponse])
 def get_all_functions_endpoint(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
     """
     API để lấy danh sách tất cả chức năng (functions).
@@ -104,7 +105,7 @@ def remove_empty_children(obj):
 
 
 @router.get("/tree", response_model=List[FunctionResponse])
-def get_function_tree_with_parent_name_endpoint(db: Session = Depends(get_db)):
+def get_function_tree_with_parent_name_endpoint(db: Session = Depends(get_db),user: User = Depends(get_current_user)):
     """
     API để lấy danh sách chức năng dưới dạng cây và thêm tên của chức năng cha.
     """
