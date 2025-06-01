@@ -174,6 +174,7 @@ class Thesis(Base):
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
     status = Column(Integer, index=True)
     #  1: Chua co nguoi dang ki . 2 Da co nguoi dang ki. 
+    batch_id = Column(UUID, nullable=False, index=True)
 
 class ThesisLecturer(Base):
     __tablename__ = 'thesis_lecturer'

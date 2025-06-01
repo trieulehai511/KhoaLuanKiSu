@@ -3,7 +3,7 @@ import uuid
 from fastapi import HTTPException,status
 from sqlalchemy import UUID
 from sqlalchemy.orm import Session
-from models.model import Information, LecturerInfo, Thesis, ThesisLecturer, User
+from models.model import AcademyYear, Batch, Information, LecturerInfo, Semester, Thesis, ThesisLecturer, User
 from schemas.thesis import ThesisCreate, ThesisResponse, ThesisUpdate
 
 def create(db: Session,thesis: ThesisCreate, lecturer_id: uuid.UUID):
@@ -18,16 +18,17 @@ def create(db: Session,thesis: ThesisCreate, lecturer_id: uuid.UUID):
         end_date=thesis.end_date,
         status=thesis.status,
         create_by=lecturer_id,
-        create_datetime=datetime.utcnow()
+        create_datetime=datetime.utcnow(),
+        batch_id = thesis.batch_id
     )
     db.add(db_thesis)
     db.commit()
     db.refresh(db_thesis)
     return db_thesis
 
-def update_thesis(db: Session, thesis_id: UUID, thesis: ThesisUpdate):
+def update_thesis(db: Session, thesis_id: UUID, thesis: ThesisUpdate, user_id: UUID):
     """
-    Cập nhật thông tin một luận văn (thesis).
+    Cập nhật thông tin một luận văn (thesis), chỉ cho phép giảng viên tạo đề tài cập nhật.
     """
     db_thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not db_thesis:
@@ -36,30 +37,48 @@ def update_thesis(db: Session, thesis_id: UUID, thesis: ThesisUpdate):
             detail="Thesis not found"
         )
 
-    for key, value in thesis.dict(exclude_unset=True).items():
-        setattr(db_thesis, key, value)
-    db_thesis.update_datetime = datetime.utcnow()
+    # Kiểm tra quyền: chỉ người tạo mới được cập nhật
+    if db_thesis.create_by != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: You can only update your own thesis"
+        )
 
+    update_data = thesis.dict(exclude_unset=True)
+
+    # Nếu có batch_id, kiểm tra xem batch có tồn tại không
+    if "batch_id" in update_data:
+        batch = db.query(Batch).filter(Batch.id == update_data["batch_id"]).first()
+        if not batch:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid batch ID"
+            )
+
+    for key, value in update_data.items():
+        setattr(db_thesis, key, value)
+
+    db_thesis.update_datetime = datetime.utcnow()
     db.commit()
     db.refresh(db_thesis)
+
     return db_thesis
 
+
 def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
-    """
-    Lấy thông tin một luận văn (thesis) theo ID, bao gồm thông tin của tất cả giảng viên hướng dẫn.
-    """
     thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not thesis:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thesis not found"
         )
+
+    # Lấy danh sách giảng viên
     thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
     instructors = []
     for tl in thesis_lecturers:
         lecturer_info = db.query(LecturerInfo).filter(LecturerInfo.id == tl.lecturer_id).first()
         if lecturer_info:
-            # Lấy thông tin người dùng từ bảng Information
             user_info = db.query(Information).filter(Information.user_id == lecturer_info.user_id).first()
             if user_info:
                 instructors.append({
@@ -68,23 +87,45 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
                     "department": lecturer_info.department,
                     "phone": lecturer_info.phone
                 })
+
+    # Lấy thông tin batch, semester, academy_year
+    batch = db.query(Batch).filter(Batch.id == thesis.batch_id).first()
+    semester = db.query(Semester).filter(Semester.id == batch.semester_id).first() if batch else None
+    academy_year = db.query(AcademyYear).filter(AcademyYear.id == semester.academy_year_id).first() if semester else None
+
     return ThesisResponse(
         id=thesis.id,
-        topicNumber=thesis.thesis_type,
+        thesis_type=thesis.thesis_type,
         status="Chưa có người đăng ký" if thesis.status == 1 else "Đã có người đăng ký",
         name=thesis.title,
         description=thesis.description,
         start_date=thesis.start_date,
         end_date=thesis.end_date,
-        instructors=instructors
+        instructors=instructors,
+        batch={
+            "id": batch.id,
+            "name": batch.name,
+            "start_date": batch.start_date,
+            "end_date": batch.end_date,
+            "semester": {
+                "id": semester.id,
+                "name": semester.name,
+                "start_date": semester.start_date,
+                "end_date": semester.end_date,
+                "academy_year": {
+                    "id": academy_year.id,
+                    "name": academy_year.name,
+                    "start_date": academy_year.start_date,
+                    "end_date": academy_year.end_date
+                } if academy_year else None
+            } if semester else None
+        } if batch else None
     )
 
 def get_all_theses(db: Session) -> list[ThesisResponse]:
-    """
-    Lấy danh sách tất cả các luận văn (theses) với thông tin của tất cả giảng viên hướng dẫn.
-    """
     theses = db.query(Thesis).all()
     thesis_responses = []
+
     for thesis in theses:
         thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
         instructors = []
@@ -100,6 +141,11 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
                         "phone": lecturer_info.phone
                     })
 
+        # Lấy thông tin batch, semester, academy_year
+        batch = db.query(Batch).filter(Batch.id == thesis.batch_id).first()
+        semester = db.query(Semester).filter(Semester.id == batch.semester_id).first() if batch else None
+        academy_year = db.query(AcademyYear).filter(AcademyYear.id == semester.academy_year_id).first() if semester else None
+
         thesis_responses.append({
             "id": thesis.id,
             "thesis_type": thesis.thesis_type,
@@ -108,10 +154,29 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
             "description": thesis.description,
             "start_date": thesis.start_date,
             "end_date": thesis.end_date,
-            "instructors": instructors
+            "instructors": instructors,
+            "batch": {
+                "id": batch.id,
+                "name": batch.name,
+                "start_date": batch.start_date,
+                "end_date": batch.end_date,
+                "semester": {
+                    "id": semester.id,
+                    "name": semester.name,
+                    "start_date": semester.start_date,
+                    "end_date": semester.end_date,
+                    "academy_year": {
+                        "id": academy_year.id,
+                        "name": academy_year.name,
+                        "start_date": academy_year.start_date,
+                        "end_date": academy_year.end_date
+                    } if academy_year else None
+                } if semester else None
+            } if batch else None
         })
 
     return thesis_responses
+
 
 def delete_thesis(db: Session, thesis_id: UUID):
     """

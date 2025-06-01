@@ -34,12 +34,17 @@ def create_thesis_endpoint(
 def update_thesis_endpoint(
     thesis_id: UUID,
     thesis: ThesisUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
     """
     API để cập nhật thông tin một luận văn (thesis).
+    Chỉ cho phép giảng viên tạo đề tài đó được sửa.
     """
-    return update_thesis(db, thesis_id, thesis)
+    update_thesis(db, thesis_id, thesis, user.id)
+    return get_thesis_by_id(db, thesis_id)
+
+
 
 @router.get("/{thesis_id}", response_model=ThesisResponse)
 def get_thesis_by_id_endpoint(thesis_id: UUID, db: Session = Depends(get_db)):
