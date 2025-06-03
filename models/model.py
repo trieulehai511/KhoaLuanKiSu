@@ -64,11 +64,12 @@ class StudentInfo(Base):
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
+
 class LecturerInfo(Base):
     __tablename__ = 'lecturer_info'
     id = Column(UUID, primary_key=True, default=uuid.uuid4, index = True)
     user_id = Column(UUID, nullable=False)
-    lecturer_code = Column(UUID, nullable=False, index = True)
+    lecturer_code = Column(String, nullable=False, index = True)
     department = Column(Integer)
     title = Column(String, nullable= False)
     phone = Column(String, nullable= False)
@@ -76,6 +77,13 @@ class LecturerInfo(Base):
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
+class Department(Base):
+    __tablename__ = "department"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    create_datetime = Column(DateTime, default=func.now())
+    update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -149,6 +157,7 @@ class Thesis(Base):
     status = Column(Integer, index=True)
     #  1: Chua co nguoi dang ki . 2 Da co nguoi dang ki. 
     batch_id = Column(UUID, nullable=False, index=True)
+    major_id = Column(UUID, nullable=False, index=True)
 
 class ThesisLecturer(Base):
     __tablename__ = 'thesis_lecturer'

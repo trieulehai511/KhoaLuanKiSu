@@ -11,9 +11,10 @@ class ThesisBase(BaseModel):
     end_date: datetime
     status:  int
     batch_id: UUID
+    major_id: UUID
 
 class ThesisCreate(ThesisBase):
-    pass
+    lecturer_ids: List[UUID]  # ✅ Danh sách ID giảng viên
 
 class ThesisUpdate(BaseModel):
     title:  Optional[str] = None
@@ -23,11 +24,15 @@ class ThesisUpdate(BaseModel):
     end_date:  Optional[datetime] = None
     status:  Optional[int] = None
     batch_id: Optional[UUID] = None
+    major_id: Optional[UUID] = None
+    lecturer_ids: Optional[List[UUID]] = None  #
 
 class InstructorResponse(BaseModel):
     name: str
     email: str
+    lecturer_code: str
     department: int
+    department_name: Optional[str] = None
     phone: str
 
 class AcademyYearResponse(BaseModel):
@@ -69,10 +74,34 @@ class ThesisResponse(BaseModel):
     end_date: Optional[datetime]
     instructors: List[InstructorResponse]
     batch: BatchResponse  # Trả ra cả đợt, kỳ, năm học
+    major: str
+    name_thesis_type: str
 
     class Config:
         orm_mode = True
 
+class MajorResponse(BaseModel):
+    id: UUID
+    name: str
+
+    class Config:
+        orm_mode = True
+
+class DepartmentBase(BaseModel):
+    name: str
+
+class DepartmentCreate(DepartmentBase):
+    pass
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = None
+
+class DepartmentResponse(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
 
 
 

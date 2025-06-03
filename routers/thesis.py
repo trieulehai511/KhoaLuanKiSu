@@ -3,9 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List
 from db.database import get_db
 from models.model import User
-from schemas.thesis import ThesisCreate, ThesisUpdate, ThesisResponse
+from schemas.thesis import DepartmentResponse, MajorResponse, ThesisCreate, ThesisUpdate, ThesisResponse
 from services.thesis import (
     create,
+    get_all_departments,
+    get_all_majors,
     update_thesis,
     get_thesis_by_id,
     get_all_theses,
@@ -69,3 +71,17 @@ def delete_thesis_endpoint(
     API để xóa một luận văn (thesis) theo ID.
     """
     return delete_thesis(db, thesis_id)
+
+@router.get("/getall/major", response_model=List[MajorResponse])
+def get_all_majors_endpoint(db: Session = Depends(get_db)):
+    """
+    API để lấy danh sách tất cả chuyên ngành (major).
+    """
+    return get_all_majors(db)
+
+@router.get("/getall/department/g", response_model=List[DepartmentResponse])
+def get_all_departments_endpoint(db: Session = Depends(get_db)):
+    """
+    API để lấy danh sách tất cả khoa (department).
+    """
+    return get_all_departments(db)

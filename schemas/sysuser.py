@@ -20,6 +20,21 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     user_type: Optional[int] = None
 
+class LecturerAccountResponse(BaseModel):
+    id: UUID
+    user_name: str
+    first_name: str
+    last_name: str
+    email: str
+    department: int
+    title: str
+    phone: str
+    is_active: bool
+    department_name: Optional[str]
+
+    class Config:
+        orm_mode = True
+
 # Schema đăng nhập người dùng
 class UserLogin(BaseModel):
     user_name: str
