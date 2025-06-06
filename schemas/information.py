@@ -22,9 +22,14 @@ class InformationUpdate(BaseModel):
     address: Optional[str] = None
     tel_phone: Optional[str] = None
 
-class InformationResponse(InformationBase):
+class InformationResponse(BaseModel):
     id: UUID
     user_id: UUID
-
+    first_name: str
+    last_name: str
+    date_of_birth: datetime
+    gender: int  # 2: Nữ, 1: Nam 3: Khac
+    address: str
+    tel_phone: str
     class Config:
         orm_mode = True

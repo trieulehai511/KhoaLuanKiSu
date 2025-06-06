@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from db.database import Base, engine
-from routers import academy, auth, group, information, invite, sys_role, sys_role_function, sys_user_role, sysuser, thesis, function
+from routers import academy, auth, group, information, invite, lecturer_profile, student_profile, sys_role, sys_role_function, sys_user_role, sysuser, thesis, function
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from fastapi_jwt_auth import AuthJWT
@@ -22,7 +22,10 @@ app = FastAPI()
 origins = [
     "http://localhost:3000",  
     "https://your-frontend-domain.com",
-    "http://localhost:3039"
+    "http://localhost:3039",
+    "http://192.168.56.1:3039",
+    "http://localhost:3040",
+    "http://localhost:3041"
 ]
 
 app.add_middleware(
@@ -57,7 +60,9 @@ list_router = [
     function.router,
     sys_user_role.router,
     sys_role_function.router,
-    academy.router
+    academy.router,
+    student_profile.router,
+    lecturer_profile.router
 ]
 for router in list_router:
     app.include_router(router)

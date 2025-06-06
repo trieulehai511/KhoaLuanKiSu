@@ -11,7 +11,6 @@ class SysUserRoleCreate(SysUserRoleBase):
     pass
 
 class SysUserRoleUpdate(BaseModel):
-    created_by: Optional[UUID] = None
     role_id: Optional[int] = None
     user_id: Optional[UUID] = None
 

@@ -115,8 +115,7 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
                     "email": lecturer_info.email,
                     "department": lecturer_info.department,
                     "lecturer_code": lecturer_info.lecturer_code,
-                    "department_name": department_name,
-                    "phone": lecturer_info.phone
+                    "department_name": department_name
                 })
 
     batch = db.query(Batch).filter(Batch.id == thesis.batch_id).first()
@@ -141,6 +140,7 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
         description=thesis.description,
         start_date=thesis.start_date,
         end_date=thesis.end_date,
+        reason=thesis.reason,
         instructors=instructors,
         name_thesis_type="Khóa luận" if thesis.thesis_type ==1 else "Đồ án",
         batch={
@@ -165,9 +165,8 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
     )
 
 def get_all_theses(db: Session) -> list[ThesisResponse]:
-    theses = db.query(Thesis).all()
+    theses = db.query(Thesis).order_by(Thesis.create_datetime.desc()).all()
     thesis_responses = []
-
     for thesis in theses:
         thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
         instructors = []
@@ -186,8 +185,7 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
                         "email": lecturer_info.email,
                         "lecturer_code": lecturer_info.lecturer_code,
                         "department": lecturer_info.department,
-                        "department_name": department_name,
-                        "phone": lecturer_info.phone
+                        "department_name": department_name
                     })
 
         batch = db.query(Batch).filter(Batch.id == thesis.batch_id).first()
@@ -208,12 +206,13 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
                 "Hủy đăng ký" if thesis.status == 5 else
                 "Không xác định"
             ),
+            reason=thesis.reason,
             name=thesis.title,
             description=thesis.description,
             start_date=thesis.start_date,
             end_date=thesis.end_date,
             instructors=instructors,
-            name_thesis_type="Khóa luận" if thesis.thesis_type ==1 else "Đồ án",
+            name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch={
                 "id": batch.id,
                 "name": batch.name,
@@ -236,6 +235,7 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
         ))
 
     return thesis_responses
+
 
 def delete_thesis(db: Session, thesis_id: UUID):
     """

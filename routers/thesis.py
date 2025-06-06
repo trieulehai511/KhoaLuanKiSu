@@ -25,7 +25,7 @@ router = APIRouter(
 def create_thesis_endpoint(
     thesis: ThesisCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
 ):
     """
     API để tạo mới một luận văn (thesis).

@@ -12,7 +12,7 @@ from services.function import (
     get_all_functions,
     delete_function
 )
-from routers.auth import get_current_user
+from routers.auth import PathChecker, get_current_user
 
 
 router = APIRouter(
@@ -20,7 +20,7 @@ router = APIRouter(
     tags=["functions"]
 )
 
-@router.post("/", response_model=FunctionResponse)
+@router.post("/", response_model=FunctionResponse,dependencies=[Depends(PathChecker("/post/functions"))])
 def create_function_endpoint(
     function: FunctionCreate,
     db: Session = Depends(get_db),
@@ -36,7 +36,7 @@ def get_function_by_id_endpoint(function_id: int, db: Session = Depends(get_db))
     return get_function_by_id(db, function_id)
 
 
-@router.put("/{function_id}", response_model=FunctionResponse)
+@router.put("/{function_id}",dependencies=[Depends(PathChecker("/put/functions/:id"))], response_model=FunctionResponse)
 def update_function_endpoint(
     function_id: int,
     function: FunctionUpdate,
@@ -67,7 +67,7 @@ def get_all_functions_endpoint(
     """
     return get_all_functions(db)
 
-@router.delete("/{function_id}")
+@router.delete("/{function_id}",dependencies=[Depends(PathChecker("/delete/functions/:id"))])
 def delete_function_endpoint(
     function_id: int,
     db: Session = Depends(get_db)
@@ -104,7 +104,7 @@ def remove_empty_children(obj):
     return obj
 
 
-@router.get("/tree", response_model=List[FunctionResponse])
+@router.get("/tree", response_model=List[FunctionResponse],dependencies=[Depends(PathChecker("/get/functions/tree"))])
 def get_function_tree_with_parent_name_endpoint(db: Session = Depends(get_db),user: User = Depends(get_current_user)):
     """
     API để lấy danh sách chức năng dưới dạng cây và thêm tên của chức năng cha.

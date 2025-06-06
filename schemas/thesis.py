@@ -26,6 +26,7 @@ class ThesisUpdate(BaseModel):
     batch_id: Optional[UUID] = None
     major_id: Optional[UUID] = None
     lecturer_ids: Optional[List[UUID]] = None  #
+    reason: Optional[str] = None
 
 class InstructorResponse(BaseModel):
     name: str
@@ -33,7 +34,6 @@ class InstructorResponse(BaseModel):
     lecturer_code: str
     department: int
     department_name: Optional[str] = None
-    phone: str
 
 class AcademyYearResponse(BaseModel):
     id: UUID
@@ -75,6 +75,7 @@ class ThesisResponse(BaseModel):
     instructors: List[InstructorResponse]
     batch: BatchResponse  # Trả ra cả đợt, kỳ, năm học
     major: str
+    reason: Optional[str]
     name_thesis_type: str
 
     class Config:
