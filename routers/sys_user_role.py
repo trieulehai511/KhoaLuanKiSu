@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from db.database import get_db
 from models.model import User
-from routers.auth import get_current_user
+from routers.auth import PathChecker, get_current_user
 from schemas.sys_user_role import SysUserRoleCreate, SysUserRoleResponse, SysUserRoleUpdate
 from services.sys_user_role import create_user_role_assignment, delete_all_assignments_for_user, delete_all_users_for_role, delete_user_role_assignment, get_assignments_for_user, get_user_role_assignment_by_id, get_users_for_role, update_user_role_assignment
 
@@ -14,7 +14,7 @@ router = APIRouter(
     tags=["User Roles Management"]
 )
 
-@router.post("/", response_model=SysUserRoleResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=SysUserRoleResponse,dependencies=[Depends(PathChecker("/post/user-roles"))], status_code=status.HTTP_201_CREATED)
 def assign_role_to_user_endpoint(
     assignment_data: SysUserRoleCreate,
     db: Session = Depends(get_db),
@@ -64,7 +64,7 @@ def read_users_for_role_endpoint(
     assignments = get_users_for_role(db=db, role_id=role_id)
     return assignments
 
-@router.put("/{assignment_id}", response_model=SysUserRoleResponse)
+@router.put("/{assignment_id}",dependencies=[Depends(PathChecker("/put/user-roles"))], response_model=SysUserRoleResponse)
 def update_user_role_assignment_endpoint(
     assignment_id: int,
     assignment_update_data: SysUserRoleUpdate,

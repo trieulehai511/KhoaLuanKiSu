@@ -10,42 +10,41 @@ from models.model import SysUserRole as SysUserRoleModel
 
 def create_user_role_assignment(db: Session, assignment: SysUserRoleCreate, current_user_id: PythonUUID) -> SysUserRoleModel:
     """
-    Gán một vai trò cho một người dùng (tạo một bản ghi SysUserRole mới).
-    current_user_id là ID của người dùng thực hiện hành động này (nếu assignment.created_by không được cung cấp).
+    Gán một vai trò cho người dùng — đảm bảo mỗi user chỉ có duy nhất 1 vai trò.
+    current_user_id là ID của người thực hiện hành động (nếu assignment.created_by không có).
     """
-    # Kiểm tra xem cặp user_id và role_id đã tồn tại chưa để tránh trùng lặp (tùy chọn)
-    existing_assignment = db.query(SysUserRoleModel).filter(
-        SysUserRoleModel.user_id == assignment.user_id,
-        SysUserRoleModel.role_id == assignment.role_id
+    existing_role = db.query(SysUserRoleModel).filter(
+        SysUserRoleModel.user_id == assignment.user_id
     ).first()
 
-    if existing_assignment:
+    if existing_role:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Người dùng này đã được gán vai trò này rồi."
+            detail="Người dùng này đã được gán một vai trò khác. Mỗi người chỉ được gán một vai trò."
         )
 
-    
-
+    # Nếu chưa có role, tiến hành gán
     db_assignment = SysUserRoleModel(
         user_id=assignment.user_id,
         role_id=assignment.role_id,
         created_by=current_user_id,
         create_datetime=datetime.utcnow()
     )
+
     try:
         db.add(db_assignment)
         db.commit()
         db.refresh(db_assignment)
     except Exception as e:
         db.rollback()
-        # Log lỗi e ở đây để debug
         print(f"Database error during user-role assignment creation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lỗi khi gán vai trò cho người dùng trong cơ sở dữ liệu."
         )
+
     return db_assignment
+
 
 def get_user_role_assignment_by_id(db: Session, assignment_id: int) -> Optional[SysUserRoleModel]:
     """
@@ -66,7 +65,12 @@ def get_users_for_role(db: Session, role_id: int) -> List[SysUserRoleModel]:
     return db.query(SysUserRoleModel).filter(SysUserRoleModel.role_id == role_id).all()
 
 
-def update_user_role_assignment(db: Session, assignment_id: int, assignment_update_data: SysUserRoleUpdate, current_user_id: PythonUUID) -> Optional[SysUserRoleModel]:
+def update_user_role_assignment(
+    db: Session,
+    assignment_id: int,
+    assignment_update_data: SysUserRoleUpdate,
+    current_user_id: PythonUUID
+) -> Optional[SysUserRoleModel]:
     """
     Cập nhật một bản ghi gán quyền hiện có.
     assignment_id là ID của bản ghi SysUserRole cần cập nhật.
@@ -79,42 +83,44 @@ def update_user_role_assignment(db: Session, assignment_id: int, assignment_upda
             detail="Bản ghi gán quyền không tồn tại."
         )
 
-    update_data = assignment_update_data.model_dump(exclude_unset=True)
+    # ✅ Dùng dict() thay vì model_dump()
+    update_data = assignment_update_data.dict(exclude_unset=True)
 
+    # ✅ Gán dữ liệu mới nếu được truyền
     if "user_id" in update_data:
         db_assignment.user_id = update_data["user_id"]
     if "role_id" in update_data:
         db_assignment.role_id = update_data["role_id"]
-    if "created_by" in update_data: # Cho phép cập nhật người tạo nếu cần
-        db_assignment.created_by = update_data["created_by"]
-    # Nếu có các trường khác như status của assignment, cập nhật ở đây
     # if "status" in update_data:
     #     db_assignment.status = update_data["status"]
 
-    # Kiểm tra trùng lặp nếu user_id hoặc role_id đã thay đổi (tùy chọn, nhưng nên có)
+    # ✅ Kiểm tra trùng lặp sau khi cập nhật user_id + role_id
     if "user_id" in update_data or "role_id" in update_data:
-        check_conflict = db.query(SysUserRoleModel).filter(
+        conflict = db.query(SysUserRoleModel).filter(
             SysUserRoleModel.user_id == db_assignment.user_id,
             SysUserRoleModel.role_id == db_assignment.role_id,
-            SysUserRoleModel.id != assignment_id # Loại trừ chính bản ghi đang cập nhật
+            SysUserRoleModel.id != assignment_id
         ).first()
-        if check_conflict:
-            db.rollback() # Hoàn tác các thay đổi đã gán ở trên nếu có xung đột
+        if conflict:
+            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sau khi cập nhật, người dùng này sẽ bị trùng lặp vai trò đã có."
+                detail="Sau khi cập nhật, người dùng này sẽ bị trùng vai trò đã có."
             )
+
     try:
         db.commit()
         db.refresh(db_assignment)
     except Exception as e:
         db.rollback()
-        print(f"Database error during user-role assignment update: {e}")
+        print(f"[Lỗi DB] Khi cập nhật user-role: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi khi cập nhật bản ghi gán quyền."
+            detail="Đã xảy ra lỗi khi cập nhật bản ghi gán vai trò."
         )
+
     return db_assignment
+
 
 def delete_user_role_assignment(db: Session, assignment_id: int) -> dict:
     """

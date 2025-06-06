@@ -72,7 +72,6 @@ class LecturerInfo(Base):
     lecturer_code = Column(String, nullable=False, index = True)
     department = Column(Integer)
     title = Column(String, nullable= False)
-    phone = Column(String, nullable= False)
     email = Column(String, nullable= False)
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -158,6 +157,8 @@ class Thesis(Base):
     #  1: Chua co nguoi dang ki . 2 Da co nguoi dang ki. 
     batch_id = Column(UUID, nullable=False, index=True)
     major_id = Column(UUID, nullable=False, index=True)
+    reason = Column(String, nullable=True)
+
 
 class ThesisLecturer(Base):
     __tablename__ = 'thesis_lecturer'

@@ -1,29 +1,31 @@
-import datetime
-from typing import Optional
+from pydantic import BaseModel
 from uuid import UUID
-from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from typing import Optional
 
 
 class LecturerInfoBase(BaseModel):
     lecturer_code: str
     department: int
     title: str
-    phone: str
-    email: EmailStr
+    email: str
+
 
 class LecturerInfoCreate(LecturerInfoBase):
-    user_id: UUID
+    pass 
+
 
 class LecturerInfoUpdate(BaseModel):
-    lecturer_code: Optional[str]
-    department: Optional[int]
-    title: Optional[str]
-    phone: Optional[str]
-    email: Optional[EmailStr]
+    lecturer_code: Optional[str] = None
+    department: Optional[int] = None
+    title: Optional[str] = None
+    email: Optional[str] = None
+
 
 class LecturerInfoResponse(LecturerInfoBase):
     id: UUID
     user_id: UUID
+    department_name: str
     create_datetime: datetime
     update_datetime: datetime
 

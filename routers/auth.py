@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, status, Res
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from models.model import SysFunction,SysRole, SysRoleFunction, SysUserRole, User, RefreshToken
-from schemas.sysuser import UserBase, UserCreate, UserLogin, UserResponse
+from schemas.sysuser import AdminChangePasswordRequest, ChangePasswordRequest, UserBase, UserCreate, UserLogin, UserResponse
 from auth.authentication import create_access_token, create_refresh_token,SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,REFRESH_TOKEN_EXPIRE_DAYS, ACCESS_TOKEN_EXPIRE_MINUTES
 import bcrypt
 import jwt 
@@ -69,48 +69,40 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
 class PathChecker:
     def __init__(self, allowed_path: str):
         self.allowed_path = allowed_path
-    def __call__(self, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-        # 1. Lấy các role_id đang hoạt động của người dùng
-        user_active_roles = db.query(SysUserRole.role_id)\
+
+    def __call__(self, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        user_roles = db.query(SysUserRole.role_id)\
             .join(SysRole, SysUserRole.role_id == SysRole.id)\
             .filter(SysUserRole.user_id == user.id, SysRole.status == 1)\
-            .all() # Giả sử status == 1 là vai trò hoạt động
+            .all()
 
-        role_ids = [role.role_id for role in user_active_roles]
-
+        role_ids = [r.role_id for r in user_roles]
         if not role_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User has no active assigned roles or no roles at all."
+                detail="Bạn chưa được gán quyền hoặc tất cả quyền đã bị vô hiệu hóa."
             )
-
-        # 2. Tìm chức năng (function) đang hoạt động tương ứng với allowed_path
         function = db.query(SysFunction).filter(
             SysFunction.path == self.allowed_path,
-            SysFunction.status == 1 # Giả sử status == 1 là chức năng hoạt động
+            SysFunction.status == 1  
         ).first()
 
         if not function:
-            # Có thể lỗi do path không tồn tại, hoặc function không hoạt động
-            # Cân nhắc trả về thông báo lỗi cụ thể hơn nếu muốn
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access to path {self.allowed_path} is forbidden or function is not active/defined."
+                detail=f"Đường dẫn [{self.allowed_path}] không tồn tại hoặc đã bị khóa."
             )
-
-        # 3. Kiểm tra xem vai trò của người dùng có quyền truy cập chức năng (và quyền đó đang hoạt động)
-        role_function = db.query(SysRoleFunction).filter(
+        allowed = db.query(SysRoleFunction).filter(
             SysRoleFunction.function_id == function.id,
             SysRoleFunction.role_id.in_(role_ids),
-            SysRoleFunction.status == 1 # Giả sử status == 1 là quyền gán đang hoạt động
+            SysRoleFunction.status == 1 
         ).first()
 
-        if not role_function:
+        if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"User does not have active permission to access {self.allowed_path}"
+                detail=f"Bạn không có quyền truy cập chức năng tại: {self.allowed_path}"
             )
-
         return user
 
 # class PathChecker:
@@ -147,41 +139,41 @@ class PathChecker:
 
 @router.post("/register", response_model=UserResponse)
 def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Kiểm tra người dùng đã tồn tại
     existing_user = db.query(User).filter(User.user_name == user.user_name).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="User with this username already exists")
-
-    # Tạo người dùng mới
     try:
         db_user = create_user(db, user)
 
-        # Xác định vai trò dựa trên user_type
-        role_name = ""
-        if user.user_type == 1:
-            role_name = "admin"      # Quản trị viên
-        elif user.user_type == 2:
-            role_name = "user"       # Sinh viên
-        elif user.user_type == 3:
-            role_name = "lecture"    # Giảng viên
-        else:
+        # Xác định role_code và user_type_name
+        role_map = {
+            1: ("admin", "Admin"),
+            2: ("user", "Student"),
+            3: ("lecture", "Lecturer")
+        }
+
+        if user.user_type not in role_map:
             raise HTTPException(status_code=400, detail="Invalid user type")
 
-        # Lấy vai trò từ bảng SysRole
-        default_role = db.query(SysRole).filter(SysRole.name == role_name).first()
+        role_code, user_type_name = role_map[user.user_type]
 
-        # Nếu không tìm thấy role_name, gán role mặc định là "admin"
+        # Tìm role trong bảng
+        default_role = db.query(SysRole).filter(SysRole.role_code == role_code).first()
         if not default_role:
             default_role = db.query(SysRole).filter(SysRole.id == 1).first()
 
-        # Gán vai trò mặc định cho người dùng
         if default_role:
             user_role = SysUserRole(user_id=db_user.id, role_id=default_role.id)
             db.add(user_role)
             db.commit()
             db.refresh(db_user)
 
-        return db_user
+        # Tạo dict từ db_user và thêm user_type_name
+        user_dict = db_user.__dict__.copy()
+        user_dict["user_type_name"] = user_type_name
+
+        return UserResponse(**user_dict)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -200,7 +192,7 @@ def login(user: UserLogin, response: Response, db: Session = Depends(get_db)):
         RefreshToken.is_revoked == False
     ).update({"is_revoked": True})
     db.commit()
-    access_token = create_access_token(user_id=str(db_user.id), user_name=db_user.user_name)
+    access_token = create_access_token(user_id=str(db_user.id),user_type = db_user.user_type, user_name=db_user.user_name,db=db)
     refresh_token = create_refresh_token(user_id=str(db_user.id), user_name=db_user.user_name)
     
     hashed_refresh_token = hashlib.sha256(refresh_token).hexdigest()
@@ -285,7 +277,12 @@ def refresh_token(
     user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
+    access_token = create_access_token(
+        user_id=str(user.id),
+        user_name=user.user_name,
+        user_type=user.user_type,
+        db=db 
+    )
     access_expires_at = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     db_refresh_token.access_token = access_token
@@ -323,74 +320,7 @@ def refresh_token(
         "message": "Token refreshed successfully",
         "access_token": access_token
     }
-# @router.post("/refresh")
-# def refresh_token(
-#     response: Response,
-#     refresh_token_from_request: str = Cookie(None, alias="refresh_token"),
-#     db: Session = Depends(get_db)
-# ):
-#     if not refresh_token_from_request:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Refresh token not found"
-#         )
 
-#     logger.info("🔄 Starting refresh token process")
-
-#     try:
-#         hashed_input_token = hashlib.sha256(refresh_token_from_request.encode()).hexdigest()
-#         db_refresh_token = db.query(RefreshToken).filter(
-#             RefreshToken.token == hashed_input_token,
-#             RefreshToken.is_revoked == False,
-#             RefreshToken.expires_at > datetime.utcnow()
-#         ).first()
-
-#         if not db_refresh_token:
-#             logger.warning("⚠️ Refresh token không hợp lệ hoặc đã hết hạn")
-#             raise HTTPException(
-#                 status_code=status.HTTP_401_UNAUTHORIZED,
-#                 detail="Invalid, revoked, or expired refresh token"
-#             )
-
-#         # Lấy thông tin người dùng
-#         user = db.query(User).filter(User.id == db_refresh_token.user_id).first()
-#         if not user:
-#             raise HTTPException(status_code=404, detail="User not found")
-
-#         # ✅ Tạo access token mới
-#         access_token = create_access_token(user_id=str(user.id), user_name=user.user_name)
-#         access_expires_at = datetime.utcnow() + timedelta(hours=1)
-
-#         # ✅ Cập nhật vào DB
-#         db_refresh_token.access_token = access_token
-#         db_refresh_token.access_expires_at = access_expires_at
-#         db.commit()
-
-#         # ✅ Ghi cookie mới
-#         response.set_cookie(
-#         key="access_token",
-#         value=access_token,
-#         httponly=True,
-#         secure=True,     
-#         samesite="None",     
-#         max_age=ACCESS_TOKEN_EXPIRE_MINUTES*60+600 
-#     )
-
-
-#         logger.info(f"✅ Access token mới đã tạo cho user {user.user_name}")
-
-#         return {
-#             "message": "Token refreshed successfully",
-#             "access_token": access_token
-#         }
-
-#     except ExpiredSignatureError:
-#         logger.error("❌ Refresh token đã hết hạn (JWT decode)")
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Refresh token has expired"
-#         )
-    
 @router.post("/logout" )
 def logout(response: Response, refresh_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     """Xử lý đăng xuất"""
@@ -412,3 +342,34 @@ def get_current_user_info(user: User = Depends(PathChecker("/auth/me"))):
 def protected_route(user: User = Depends(PathChecker("/auth/protected"))):
     """Endpoint bảo vệ, yêu cầu xác thực"""
     return {"message": f"Hello, {user.user_name}"}
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if not db_user or not bcrypt.checkpw(data.old_password.encode('utf-8'), db_user.password.encode('utf-8')):
+        raise HTTPException(status_code=401, detail="Old password is incorrect")
+
+    hashed_new_password = bcrypt.hashpw(data.new_password.encode('utf-8'), bcrypt.gensalt()).decode("utf-8")
+    db_user.password = hashed_new_password
+    db.commit()
+    return {"message": "Password updated successfully"}
+
+#   dependencies=[Depends(PathChecker(""))]
+@router.post("/admin-change-password",dependencies=[Depends(PathChecker("/auth/admin-change-password"))])
+def admin_change_password(
+    data: AdminChangePasswordRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    db_user = db.query(User).filter(User.id == data.user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    hashed_password = bcrypt.hashpw(data.new_password.encode('utf-8'), bcrypt.gensalt()).decode("utf-8")
+    db_user.password = hashed_password
+    db.commit()
+    return {"message": f"Password updated for user {db_user.user_name}"}
