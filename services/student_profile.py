@@ -148,4 +148,53 @@ def get_student_profile_by_user_id(db: Session, user_id):
     )
 
 
+def get_all_student_profiles(db: Session) -> list[StudentFullProfile]:
+    students = db.query(StudentInfo).all()
+    results = []
 
+    gender_map = {
+        0: "Bê đê",
+        1: "Nam",
+        2: "Nữ"
+    }
+
+    for student in students:
+        info = db.query(Information).filter(Information.user_id == student.user_id).first()
+        if not info:
+            continue
+
+        major = db.query(Major).filter(Major.id == student.major_id).first()
+        major_name = major.name if major else "Không rõ"
+
+        gender_int = int(info.gender) if info.gender is not None else -1
+        gender_str = gender_map.get(gender_int, "Không rõ")
+
+        info_response = InformationResponse(
+            id=info.id,
+            user_id=info.user_id,
+            first_name=info.first_name,
+            last_name=info.last_name,
+            date_of_birth=info.date_of_birth,
+            gender=gender_int,
+            address=info.address,
+            tel_phone=info.tel_phone
+        )
+
+        student_response = StudentInfoResponse(
+            id=student.id,
+            user_id=student.user_id,
+            student_code=student.student_code,
+            class_name=student.class_name,
+            major_id=student.major_id,
+            major_name=major_name,
+            create_datetime=student.create_datetime,
+            update_datetime=student.update_datetime
+        )
+
+        results.append(StudentFullProfile(
+            user_id=student.user_id,
+            information=info_response,
+            student_info=student_response
+        ))
+
+    return results

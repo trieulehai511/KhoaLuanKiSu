@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from routers.auth import get_current_user
@@ -8,6 +9,7 @@ from schemas.student_profile import (
 )
 from services.student_profile import (
     create_student_profile,
+    get_all_student_profiles,
     update_student_profile,
     get_student_profile_by_user_id,
 )
@@ -45,3 +47,11 @@ def get_student_profile_endpoint(
     if not profile:
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin sinh viên")
     return profile
+
+@router.get("/gett-all", response_model=List[StudentFullProfile])
+def get_all_students_endpoint(db: Session = Depends(get_db)):
+    return get_all_student_profiles(db)
+
+
+
+

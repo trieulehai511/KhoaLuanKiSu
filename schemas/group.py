@@ -24,3 +24,5 @@ class GroupMemberResponse(BaseModel):
     group_id: UUID
     student_id: UUID
     is_leader: bool
+    class Config:
+        orm_mode = True 

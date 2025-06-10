@@ -49,7 +49,7 @@ class SemesterResponse(BaseModel):
     name: str
     start_date: datetime
     end_date: datetime
-    academy_year: AcademyYearResponse  
+    academy_year: Optional[AcademyYearResponse] 
 
     class Config:
         orm_mode = True
@@ -103,6 +103,16 @@ class DepartmentResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class BatchSimpleResponse(BaseModel):
+    id: UUID
+    name: str
+    start_date: datetime
+    end_date: datetime
+
+    class Config:
+        orm_mode = True
+
 
 
 
