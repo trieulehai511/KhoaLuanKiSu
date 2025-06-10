@@ -211,9 +211,11 @@ class ThesisCommittee(Base):
     __tablename__ = 'thesis_committee'
     id = Column(UUID, primary_key=True, default=uuid.uuid4)
     thesis_id  = Column(UUID, nullable=False)
-    member_id  = Column(UUID, nullable=False)
-    role = Column(Integer, nullable=False)
+    member_id  = Column(UUID, nullable=False)  # ID giảng viên
+    committee_id = Column(UUID, nullable=False)  # Hội đồng mà giảng viên thuộc về
+    role = Column(Integer, nullable=False)  # Chủ tịch, phản biện, ủy viên, ...
     created_at = Column(DateTime, default=func.now())
+
 
 class ThesisMemberScore(Base):
     __tablename__ = "thesis_member_score"
@@ -227,6 +229,15 @@ class ThesisMemberScore(Base):
     updated_at = Column(DateTime, default=func.now())
 
 
+class Committee(Base):
+    __tablename__ = 'committee'
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    chairman_id = Column(UUID, nullable=True)  # Giảng viên làm chủ tịch hội đồng
+    meeting_time = Column(DateTime, nullable=True)
+    note = Column(String, nullable=True)
+    create_datetime = Column(DateTime, default=func.now())
+    update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
 

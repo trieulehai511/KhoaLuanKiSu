@@ -14,7 +14,7 @@ router = APIRouter(
     tags=["group"]
 )
 
-@router.post("",response_model=GroupResponse,dependencies=[Depends(PathChecker("/group"))])
+@router.post("",response_model=GroupResponse)
 def create_new_group(group: GroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Tạo nhóm mới"""
     return create_group(db, group, user.id)
