@@ -24,7 +24,7 @@ def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
     return "Registed successfully"
 
 #   dependencies=[Depends(PathChecker(""))]
-@router.get("/", response_model=List[UserResponse], dependencies=[Depends(PathChecker("/users"))])
+@router.get("/", response_model=List[UserResponse])
 def get_users(db: Session = Depends(get_db),):
     """
     API trả về danh sách tất cả người dùng.
@@ -38,7 +38,7 @@ def get_lecturers(db: Session = Depends(get_db)):
     """
     return get_all_lecturers(db)
 
-@router.get("/full-profile/{user_id}", response_model=UserFullProfile,  dependencies=[Depends(PathChecker("/users/full-profile/:id"))])
+@router.get("/full-profile/{user_id}", response_model=UserFullProfile)
 def get_user_full_profile(user_id: UUID, db: Session = Depends(get_db)):
     profile = get_user_full_profile_by_id(db, user_id)
     if not profile:
