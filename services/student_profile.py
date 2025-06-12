@@ -1,9 +1,10 @@
+from typing import Optional
 from sqlalchemy.orm import Session
 from models.model import Information, Major, StudentInfo
 from schemas.student_profile import StudentCreateProfile, StudentUpdateProfile, StudentFullProfile
 from schemas.information import InformationResponse
 from schemas.student_info import StudentInfoResponse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 def create_student_profile(db: Session, profile_data: StudentCreateProfile, user_id):
@@ -148,27 +149,24 @@ def get_student_profile_by_user_id(db: Session, user_id):
     )
 
 
-def get_all_student_profiles(db: Session) -> list[StudentFullProfile]:
-    students = db.query(StudentInfo).all()
+def get_all_student_profiles(db: Session, major_id: Optional[UUID] = None) -> list[StudentFullProfile]:
+    query = db.query(StudentInfo)
+    if major_id:
+        query = query.filter(StudentInfo.major_id == major_id)
+    students = query.all()
     results = []
-
     gender_map = {
         0: "Bê đê",
         1: "Nam",
         2: "Nữ"
     }
-
     for student in students:
         info = db.query(Information).filter(Information.user_id == student.user_id).first()
         if not info:
             continue
-
         major = db.query(Major).filter(Major.id == student.major_id).first()
         major_name = major.name if major else "Không rõ"
-
         gender_int = int(info.gender) if info.gender is not None else -1
-        gender_str = gender_map.get(gender_int, "Không rõ")
-
         info_response = InformationResponse(
             id=info.id,
             user_id=info.user_id,

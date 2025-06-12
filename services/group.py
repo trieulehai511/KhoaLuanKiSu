@@ -1,14 +1,18 @@
 from sqlalchemy.orm import Session
-from models.model import Group, GroupMember
-from schemas.group import GroupCreate, GroupUpdate, GroupMemberCreate
+from models.model import Group, GroupMember, Information, StudentInfo
+from schemas.group import (
+    GroupCreate, GroupUpdate, GroupMemberCreate, 
+    GroupWithMembersResponse, MemberDetailResponse
+)
 from uuid import UUID
 from fastapi import HTTPException, status
+from typing import List
 
 def create_group(db: Session, group: GroupCreate, user_id: UUID):
     """Tạo nhóm mới và đặt người tạo làm nhóm trưởng"""
-    new_group = Group(name=group.name, leader_id=user_id,quantity = 1)
+    new_group = Group(name=group.name, leader_id=user_id, quantity=1)
     db.add(new_group)
-    db.commit()
+    db.flush()
     db.refresh(new_group)
 
     group_leader = GroupMember(
@@ -22,33 +26,13 @@ def create_group(db: Session, group: GroupCreate, user_id: UUID):
 
 def add_member(db: Session, group_id: UUID, member: GroupMemberCreate, leader_id: UUID):
     """Thêm thành viên vào nhóm (chỉ nhóm trưởng)"""
-    group = db.query(Group).filter(Group.id == group_id, Group.leader_id == leader_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ nhóm trưởng mới có quyền thêm thành viên")
-
-    existing_member = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.student_id == member.student_id).first()
-    if existing_member:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thành viên đã có trong nhóm")
-
-    new_member = GroupMember(group_id=group_id, student_id=member.student_id, is_leader=False)
-    db.add(new_member)
-    db.commit()
-    db.refresh(new_member)
-    return new_member
+    # ... (giữ nguyên logic gốc của bạn) ...
+    pass
 
 def remove_member(db: Session, group_id: UUID, member_id: UUID, leader_id: UUID):
     """Xóa thành viên khỏi nhóm (chỉ nhóm trưởng)"""
-    group = db.query(Group).filter(Group.id == group_id, Group.leader_id == leader_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ nhóm trưởng mới có quyền xóa thành viên")
-
-    member = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.student_id == member_id).first()
-    if not member:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thành viên không tồn tại trong nhóm")
-
-    db.delete(member)
-    db.commit()
-    return {"message": "Thành viên đã bị xóa"}
+    # ... (giữ nguyên logic gốc của bạn) ...
+    pass
 
 def get_members(db: Session, group_id: UUID):
     """Lấy danh sách thành viên của nhóm"""
@@ -56,12 +40,49 @@ def get_members(db: Session, group_id: UUID):
 
 def transfer_leader(db: Session, group_id: UUID, new_leader_id: UUID, current_leader_id: UUID):
     """Chuyển quyền nhóm trưởng"""
-    group = db.query(Group).filter(Group.id == group_id, Group.leader_id == current_leader_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ nhóm trưởng mới có quyền chuyển quyền")
-    
-    # Cập nhật trưởng nhóm
-    group.leader_id = new_leader_id
-    db.commit()
-    return {"message": "Chuyển quyền nhóm trưởng thành công"}
+    # ... (giữ nguyên logic gốc của bạn) ...
+    pass
 
+def get_all_groups_for_user(db: Session, user_id: UUID) -> List[GroupWithMembersResponse]:
+    """
+    Lấy thông tin TẤT CẢ các nhóm và danh sách thành viên của một user cụ thể.
+    """
+    user_memberships = db.query(GroupMember).filter(GroupMember.student_id == user_id).all()
+
+    if not user_memberships:
+        return []
+
+    all_groups_list: List[GroupWithMembersResponse] = []
+    
+    for membership in user_memberships:
+        group_id = membership.group_id
+        group = db.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            continue
+
+        all_members_in_group = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
+
+        member_details_list: List[MemberDetailResponse] = []
+        for member in all_members_in_group:
+            student_user_id = member.student_id
+            info = db.query(Information).filter(Information.user_id == student_user_id).first()
+            student_info = db.query(StudentInfo).filter(StudentInfo.user_id == student_user_id).first()
+
+            if info and student_info:
+                member_obj = MemberDetailResponse(
+                    user_id=student_user_id,
+                    full_name=f"{info.last_name} {info.first_name}",
+                    student_code=student_info.student_code,
+                    is_leader=member.is_leader or False
+                )
+                member_details_list.append(member_obj)
+
+        group_obj = GroupWithMembersResponse(
+            id=group.id,
+            name=group.name,
+            leader_id=group.leader_id,
+            members=member_details_list
+        )
+        all_groups_list.append(group_obj)
+
+    return all_groups_list

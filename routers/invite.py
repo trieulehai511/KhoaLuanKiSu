@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 
-@router.post("/send", dependencies=[Depends(PathChecker("/invite"))])
+@router.post("/send")
 def create_invite(invite: InviteCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Gửi lời mời tham gia nhóm"""
     return send_invite(db, invite, user.id)
