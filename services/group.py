@@ -10,6 +10,14 @@ from typing import List
 
 def create_group(db: Session, group: GroupCreate, user_id: UUID):
     """Tạo nhóm mới và đặt người tạo làm nhóm trưởng"""
+    # Điều kiện: Kiểm tra xem người dùng đã thuộc nhóm nào chưa
+    is_existing_member = db.query(GroupMember).filter(GroupMember.student_id == user_id).first()
+    if is_existing_member:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn đã là thành viên của một nhóm khác, không thể tạo nhóm mới."
+        )
+
     new_group = Group(name=group.name, leader_id=user_id, quantity=1)
     db.add(new_group)
     db.flush()

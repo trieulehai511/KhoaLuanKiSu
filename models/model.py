@@ -1,6 +1,6 @@
 from datetime import datetime
 import uuid
-from sqlalchemy import UUID, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import UUID, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
 from db.database import Base
 
 class AcademyYear(Base):
@@ -136,8 +136,8 @@ class SysUserRole(Base):
 class SysRoleFunction(Base):
     __tablename__ = "sys_role_function"
     id = Column(Integer, primary_key=True, index=True) # Khóa chính của bảng liên kết
-    role_id = Column(Integer, ForeignKey("sys_role.id"), nullable=False) # Khóa ngoại tới bảng vai trò (sys_role)
-    function_id = Column(Integer, ForeignKey("sys_function.id"), nullable=False) # Khóa ngoại tới bảng chức năng (sys_function)
+    role_id = Column(Integer, nullable=False) # Khóa ngoại tới bảng vai trò (sys_role)
+    function_id = Column(Integer, nullable=False) # Khóa ngoại tới bảng chức năng (sys_function)
     status = Column(Integer, nullable=True)
     created_by = Column(UUID, nullable=True) # Hoặc UUID
     create_datetime = Column(DateTime, default=func.now())
@@ -239,7 +239,37 @@ class Committee(Base):
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
+class Mission(Base):
+    __tablename__ = 'mission'
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    thesis_id = Column(UUID,nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    status = Column(Integer, default=1) # 1: Chưa bắt đầu, 2: Đang thực hiện, 3: Đã hoàn thành
+    create_datetime = Column(DateTime, default=func.now())
+    update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
+class Task(Base):
+    __tablename__ = 'task'
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    mission_id = Column(UUID, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    status = Column(Integer, default=1) # 1: Cần làm, 2: Đang làm, 3: Đã xong
+    create_datetime = Column(DateTime, default=func.now())
+    update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
+
+class TaskComment(Base):
+    __tablename__ = 'task_comment'
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID, nullable=False, index=True)
+    commenter_id = Column(UUID,nullable=False)
+    comment_text = Column(String, nullable=True) # Cho phép null nếu chỉ gửi ảnh
+    image_base64 = Column(Text, nullable=True) # Lưu chuỗi base64 của hình ảnh
+    create_datetime = Column(DateTime, default=func.now())
 
 
 
