@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from db.database import get_db
-from services.invite import get_invites_by_receiver, reject_invite, send_invite, accept_invite, revoke_invite
-from schemas.invite import InviteCreate
+from services.invite import get_all_invites_for_user, reject_invite, send_invite, accept_invite, revoke_invite
+from schemas.invite import AllInvitesResponse, InviteCreate
 from routers.auth import PathChecker, get_current_user
 from models.model import User
 from uuid import UUID
@@ -33,7 +33,7 @@ def reject_group_invite(invite_id: UUID, db: Session = Depends(get_db), user: Us
     """Từ chối lời mời tham gia nhóm"""
     return reject_invite(db, invite_id, user.id)
 
-@router.get("/my-invites")
-def list_my_invites(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Lấy danh sách lời mời của người dùng hiện tại"""
-    return get_invites_by_receiver(db, user.id)
+@router.get("/all-my-invites", response_model=AllInvitesResponse)
+def list_my_all_invites(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Lấy danh sách tất cả lời mời đã gửi và đã nhận của người dùng hiện tại"""
+    return get_all_invites_for_user(db, user.id)

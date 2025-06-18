@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from db.database import Base, engine
-from routers import academy, auth, group, information, invite, lecturer_profile, student_profile, sys_role, sys_role_function, sys_user_role, sysuser, thesis, function
+from routers import academy, auth, group, information, invite, lecturer_profile, progress, student_profile, sys_role, sys_role_function, sys_user_role, sysuser, thesis, function
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from fastapi_jwt_auth import AuthJWT
@@ -62,7 +62,8 @@ list_router = [
     sys_role_function.router,
     academy.router,
     student_profile.router,
-    lecturer_profile.router
+    lecturer_profile.router,
+    progress.router
 ]
 for router in list_router:
     app.include_router(router)

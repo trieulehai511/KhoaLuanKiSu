@@ -180,6 +180,7 @@ class Group(Base):
     name = Column(String, index=True)
     leader_id = Column(UUID, nullable=False)  # Người tạo nhóm (nhóm trưởng)
     quantity = Column(Integer, nullable=False)
+    thesis_id = Column(UUID, nullable=True, index=True)
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -202,7 +203,7 @@ class Invite(Base):
     id = Column(UUID, primary_key=True, default=uuid.uuid4)
     sender_id  = Column(UUID, nullable=False)
     receiver_id  = Column(UUID, nullable=False)
-    group_id = Column(UUID, nullable=False)
+    group_id = Column(UUID, nullable=True)
     status = Column(Integer) #  1.Dang cho 2. Duoc chap nhan 3. Tu choi
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -261,7 +262,7 @@ class Task(Base):
     status = Column(Integer, default=1) # 1: Cần làm, 2: Đang làm, 3: Đã xong
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
-
+    
 class TaskComment(Base):
     __tablename__ = 'task_comment'
     id = Column(UUID, primary_key=True, default=uuid.uuid4)

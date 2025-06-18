@@ -15,7 +15,7 @@ class GroupMemberCreate(BaseModel):
 
 class GroupResponse(BaseModel):
     id: UUID
-    name: str
+    name: Optional[str] = None
     leader_id: UUID
     class Config:
         orm_mode = True 
@@ -27,7 +27,6 @@ class GroupMemberResponse(BaseModel):
     class Config:
         orm_mode = True
 
-# Schema chi tiết cho một thành viên trong danh sách trả về
 class MemberDetailResponse(BaseModel):
     user_id: UUID
     full_name: str
@@ -37,10 +36,9 @@ class MemberDetailResponse(BaseModel):
     class Config:
         orm_mode = True
 
-# Schema mới cho response trả về, chứa thông tin nhóm và danh sách thành viên
 class GroupWithMembersResponse(BaseModel):
     id: UUID
-    name: str
+    name: Optional[str] = None
     leader_id: UUID
     members: List[MemberDetailResponse]
 

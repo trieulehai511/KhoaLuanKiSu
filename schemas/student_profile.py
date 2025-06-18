@@ -13,8 +13,8 @@ class StudentUpdateProfile(BaseModel):
 
 class StudentFullProfile(BaseModel):
     user_id: UUID
+    user_name: str
     information: InformationResponse
     student_info: StudentInfoResponse
-
     class Config:
         orm_mode = True
