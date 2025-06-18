@@ -1,8 +1,9 @@
+from typing import List
 from sqlalchemy.orm import Session
-from models.model import Invite
+from models.model import Information, Invite, StudentInfo
 from models.model import Group, GroupMember
 from models.model import User
-from schemas.invite import InviteCreate
+from schemas.invite import GroupInInviteResponse, InviteCreate, InviteDetailResponse, UserInInviteResponse
 from uuid import UUID
 from datetime import datetime
 from fastapi import HTTPException, status
@@ -11,67 +12,46 @@ def is_member_of_any_group(db: Session, user_id: UUID):
     """Kiểm tra người dùng đã thuộc nhóm nào chưa"""
     return db.query(GroupMember).filter(GroupMember.student_id == user_id).first() is not None
 
-def has_existing_invite(db: Session, group_id: UUID, receiver_id: UUID):
-    """Kiểm tra xem đã có lời mời từ nhóm này chưa"""
-    return db.query(Invite).filter(
-        Invite.group_id == group_id,
-        Invite.receiver_id == receiver_id,
-        Invite.status == 1
-    ).first() is not None
-
 def send_invite(db: Session, invite: InviteCreate, sender_id: UUID):
-    """Gửi lời mời tham gia nhóm.
-    Nếu người gửi chưa có nhóm, một nhóm mới sẽ được tạo."""
+    """Gửi lời mời tham gia nhóm (chưa tạo nhóm)."""
     
-    group_id_to_use = invite.group_id
+    # --- THAY ĐỔI LOGIC KIỂM TRA QUYỀN GỬI LỜI MỜI ---
+    # 1. Kiểm tra trạng thái của người gửi
+    sender_membership = db.query(GroupMember).filter(GroupMember.student_id == sender_id).first()
 
-    # Nếu không có group_id được cung cấp (lời mời đầu tiên)
-    if not group_id_to_use:
-        # Kiểm tra xem người mời đã ở trong nhóm nào chưa
-        if is_member_of_any_group(db, sender_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Bạn đã thuộc một nhóm khác và không thể tạo lời mời mới."
-            )
-        
-        # Tạo nhóm mới và đặt người mời làm nhóm trưởng
-        new_group = Group(name=f"Nhóm của sinh viên {sender_id}", leader_id=sender_id, quantity=1)
-        db.add(new_group)
-        db.flush()  # Để lấy ID của nhóm mới
+    # Nếu người gửi đã là thành viên của một nhóm, phải đảm bảo họ là nhóm trưởng
+    if sender_membership and not sender_membership.is_leader:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ nhóm trưởng mới có quyền gửi lời mời."
+        )
+    # Nếu sender_membership là None (chưa vào nhóm nào), hoặc là leader, thì tiếp tục.
 
-        leader_as_member = GroupMember(group_id=new_group.id, student_id=sender_id, is_leader=True)
-        db.add(leader_as_member)
-        group_id_to_use = new_group.id
-    else:
-        # Nếu có group_id, xác thực người gửi là nhóm trưởng
-        group = db.query(Group).filter(Group.id == group_id_to_use, Group.leader_id == sender_id).first()
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Chỉ nhóm trưởng mới có quyền mời hoặc nhóm không tồn tại."
-            )
-
-    # Kiểm tra nếu người nhận đã thuộc nhóm nào đó
+    # 2. Người nhận không được phép ở trong nhóm nào khác
     if is_member_of_any_group(db, invite.receiver_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Người được mời đã thuộc nhóm khác."
+            detail="Người được mời đã thuộc một nhóm khác."
         )
 
-    # Kiểm tra nếu đã có lời mời từ nhóm này
-    if has_existing_invite(db, group_id_to_use, invite.receiver_id):
+    # 3. Kiểm tra xem lời mời đã tồn tại và đang chờ chưa
+    existing_invite = db.query(Invite).filter(
+        Invite.sender_id == sender_id,
+        Invite.receiver_id == invite.receiver_id,
+        Invite.status == 1
+    ).first()
+    if existing_invite:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Lời mời từ nhóm này đã tồn tại."
+            detail="Bạn đã gửi lời mời đến người này rồi."
         )
 
-    # Tạo mới lời mời
+    # 4. Tạo lời mời mà không có group_id
     new_invite = Invite(
         sender_id=sender_id,
         receiver_id=invite.receiver_id,
-        group_id=group_id_to_use,
-        status=1,  # 1: Đang chờ
-        create_datetime=datetime.utcnow()
+        group_id=None,
+        status=1,
     )
     db.add(new_invite)
     db.commit()
@@ -79,16 +59,18 @@ def send_invite(db: Session, invite: InviteCreate, sender_id: UUID):
     return new_invite
 
 def accept_invite(db: Session, invite_id: UUID, receiver_id: UUID):
-    """Chấp nhận lời mời tham gia nhóm"""
-    # Điều kiện: Người chấp nhận không được có lời mời đang chờ do chính họ gửi đi
-    sent_invites = db.query(Invite).filter(Invite.sender_id == receiver_id, Invite.status == 1).first()
-    if sent_invites:
+    """Chấp nhận lời mời. Nhóm sẽ được tạo ở lần chấp nhận đầu tiên."""
+    
+    # --- Logic được làm lại hoàn toàn ---
+    # 1. Các kiểm tra cơ bản
+    # Người chấp nhận không được có lời mời đang chờ do chính họ gửi đi
+    if db.query(Invite).filter(Invite.sender_id == receiver_id, Invite.status == 1).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bạn phải hủy tất cả các lời mời đã gửi đi trước khi chấp nhận lời mời này."
+            detail="Bạn phải hủy tất cả các lời mời đã gửi đi trước khi chấp nhận."
         )
 
-    # Tìm lời mời
+    # Tìm lời mời hợp lệ
     invite = db.query(Invite).filter(
         Invite.id == invite_id,
         Invite.receiver_id == receiver_id,
@@ -96,32 +78,36 @@ def accept_invite(db: Session, invite_id: UUID, receiver_id: UUID):
     ).first()
 
     if not invite:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lời mời không tồn tại hoặc đã được xử lý."
-        )
-    
-    # Điều kiện: Kiểm tra số lượng thành viên trong nhóm
-    member_count = db.query(GroupMember).filter(GroupMember.group_id == invite.group_id).count()
-    if member_count >= 4:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nhóm đã đủ số lượng thành viên (tối đa 4 người)."
-        )
+        raise HTTPException(status_code=404, detail="Lời mời không tồn tại hoặc đã được xử lý.")
 
-    # Thêm thành viên mới vào nhóm
-    new_member = GroupMember(
-        group_id=invite.group_id,
-        student_id=invite.receiver_id,
-        is_leader=False,
-        join_date=datetime.utcnow()
-    )
-    db.add(new_member)
-    
-    # Cập nhật số lượng thành viên trong nhóm
-    db.query(Group).filter(Group.id == invite.group_id).update({"quantity": Group.quantity + 1})
+    # 2. Tìm hoặc Tạo Nhóm
+    sender_id = invite.sender_id
+    # Tìm xem người gửi lời mời đã có nhóm chưa
+    group = db.query(Group).filter(Group.leader_id == sender_id).first()
 
-    invite.status = 2 # 2: Đã chấp nhận
+    if not group:
+        new_group = Group(name=None, leader_id=sender_id, quantity=2)
+        db.add(new_group)
+        db.flush()  
+        leader_member = GroupMember(group_id=new_group.id, student_id=sender_id, is_leader=True)
+        accepted_member = GroupMember(group_id=new_group.id, student_id=receiver_id, is_leader=False)
+        db.add_all([leader_member, accepted_member])
+        invite.group_id = new_group.id
+        invite.status = 2 
+        db.query(Invite).filter(
+            Invite.sender_id == sender_id,
+            Invite.status == 1
+        ).update({"group_id": new_group.id})
+
+    else:
+        if group.quantity >= 4:
+            raise HTTPException(status_code=400, detail="Nhóm đã đủ số lượng thành viên (tối đa 4 người).")
+        new_member = GroupMember(group_id=group.id, student_id=receiver_id, is_leader=False)
+        db.add(new_member)
+        group.quantity += 1
+        invite.group_id = group.id
+        invite.status = 2
+
     db.commit()
     return {"message": "Lời mời đã được chấp nhận."}
 
@@ -157,12 +143,57 @@ def reject_invite(db: Session, invite_id: UUID, receiver_id: UUID):
     return {"message": "Lời mời đã bị từ chối."}
 
 
-def get_invites_by_receiver(db: Session, receiver_id: UUID):
-    """Lấy danh sách lời mời của tài khoản được nhận"""
-    invites = db.query(Invite).filter(
-        Invite.receiver_id == receiver_id,
-        Invite.status == 1  # Chỉ lấy lời mời đang chờ xử lý
-    ).all()
+def get_all_invites_for_user(db: Session, user_id: UUID) -> dict:
+    """Lấy tất cả lời mời đã nhận và đã gửi của một người dùng."""
 
-    # Không báo lỗi nếu không có lời mời, chỉ trả về danh sách rỗng
-    return invites
+    def get_user_details(db_session: Session, user_id: UUID) -> UserInInviteResponse:
+        user_info = db_session.query(Information).filter(Information.user_id == user_id).first()
+        student_info = db_session.query(StudentInfo).filter(StudentInfo.user_id == user_id).first()
+
+        return UserInInviteResponse(
+            id=user_id,
+            full_name=f"{user_info.last_name} {user_info.first_name}" if user_info else "Không rõ",
+            student_code=student_info.student_code if student_info else None
+        )
+
+    # Lấy lời mời đã nhận và sắp xếp theo ngày tạo mới nhất
+    received_invites_query = db.query(Invite).filter(
+        Invite.receiver_id == user_id
+    ).order_by(Invite.create_datetime.desc()).all() # <-- THÊM SẮP XẾP
+
+    received_invites_list: List[InviteDetailResponse] = []
+    for invite in received_invites_query:
+        group_info = db.query(Group).filter(Group.id == invite.group_id).first()
+        received_invites_list.append(
+            InviteDetailResponse(
+                id=invite.id,
+                status=invite.status,
+                sender=get_user_details(db, invite.sender_id),
+                receiver=get_user_details(db, invite.receiver_id),
+                group=GroupInInviteResponse.from_orm(group_info) if group_info else None
+            )
+        )
+
+    # Lấy lời mời đã gửi và sắp xếp theo ngày tạo mới nhất
+    sent_invites_query = db.query(Invite).filter(
+        Invite.sender_id == user_id
+    ).order_by(Invite.create_datetime.desc()).all() # <-- THÊM SẮP XẾP
+
+    sent_invites_list: List[InviteDetailResponse] = []
+    for invite in sent_invites_query:
+        group_info = db.query(Group).filter(Group.id == invite.group_id).first()
+        sent_invites_list.append(
+            InviteDetailResponse(
+                id=invite.id,
+                status=invite.status,
+                sender=get_user_details(db, invite.sender_id),
+                receiver=get_user_details(db, invite.receiver_id),
+                group=GroupInInviteResponse.from_orm(group_info) if group_info else None
+            )
+        )
+
+    return {
+        "received_invites": received_invites_list,
+        "sent_invites": sent_invites_list
+    }
+

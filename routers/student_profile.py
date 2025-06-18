@@ -66,8 +66,8 @@ def get_all_students_endpoint(db: Session = Depends(get_db), current_user: User 
     # Lấy mã chuyên ngành của người dùng
     user_major_id = user_student_info.major_id
 
-    # Gọi service với mã chuyên ngành để lọc
-    return get_all_student_profiles(db, major_id=user_major_id)
+    # Cập nhật lời gọi hàm: Truyền thêm current_user.id để loại trừ
+    return get_all_student_profiles(db, major_id=user_major_id, current_user_id=current_user.id)
 
 
 
