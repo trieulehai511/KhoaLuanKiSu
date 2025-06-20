@@ -120,5 +120,21 @@ class ThesisResponse(BaseModel):
         orm_mode = True
 
 
+class ThesisBatchUpdateItem(BaseModel):
+    id: UUID  
+    update_data: ThesisUpdate 
+
+class ThesisBatchUpdateRequest(BaseModel):
+    theses: List[ThesisBatchUpdateItem]
+
+class BatchUpdateError(BaseModel):
+    id: UUID
+    error: str
+
+class ThesisBatchUpdateResponse(BaseModel):
+    success_count: int
+    errors: List[BatchUpdateError]
+
+
 
 

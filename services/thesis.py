@@ -1,10 +1,11 @@
 from datetime import datetime
+from typing import List
 import uuid
 from fastapi import HTTPException,status
 from sqlalchemy import UUID, or_
 from sqlalchemy.orm import Session
 from models.model import AcademyYear, Batch, Department, Information, LecturerInfo, Major, Semester, Thesis, ThesisLecturer, User
-from schemas.thesis import AcademyYearResponse, BatchResponse, BatchSimpleResponse, DepartmentResponse, InstructorResponse, SemesterResponse, ThesisCreate, ThesisResponse, ThesisUpdate
+from schemas.thesis import AcademyYearResponse, BatchResponse, BatchSimpleResponse, BatchUpdateError, DepartmentResponse, InstructorResponse, SemesterResponse, ThesisBatchUpdateRequest, ThesisCreate, ThesisResponse, ThesisUpdate
 
 def create(db: Session, thesis: ThesisCreate, lecturer_id: uuid.UUID):
     """
@@ -318,31 +319,52 @@ def get_theses_by_batch_id(db: Session, batch_id: UUID) -> list[ThesisResponse]:
 
     for thesis in theses:
         thesis_lecturers = db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis.id).all()
-        instructors = []
+        instructors_list = []
+        reviewers_list = []
+
         for tl in thesis_lecturers:
             lecturer_info = db.query(LecturerInfo).filter(LecturerInfo.user_id == tl.lecturer_id).first()
             if lecturer_info:
                 user_info = db.query(Information).filter(Information.user_id == lecturer_info.user_id).first()
-                department_name = None
-                if lecturer_info.department:
-                    dept = db.query(Department).filter(Department.id == lecturer_info.department).first()
-                    department_name = dept.name if dept else None
-
+                department = db.query(Department).filter(Department.id == lecturer_info.department).first()
                 if user_info:
-                    instructors.append({
-                        "name": f"{user_info.last_name} {user_info.first_name} ",
-                        "email": lecturer_info.email,
-                        "lecturer_code": lecturer_info.lecturer_code,
-                        "department": lecturer_info.department,
-                        "department_name": department_name
-                    })
+                    lecturer_details = InstructorResponse(
+                        name=f"{user_info.last_name} {user_info.first_name}",
+                        email=lecturer_info.email,
+                        lecturer_code=lecturer_info.lecturer_code,
+                        department=lecturer_info.department,
+                        department_name=department.name if department else None
+                    )
+                    if tl.role == 1:
+                        instructors_list.append(lecturer_details)
+                    elif tl.role == 2:
+                        reviewers_list.append(lecturer_details)
 
+        # 2. Lấy thông tin Đợt, Học kỳ, Năm học
+        batch_response = None
         batch = db.query(Batch).filter(Batch.id == thesis.batch_id).first()
-        semester = db.query(Semester).filter(Semester.id == batch.semester_id).first() if batch else None
-        academy_year = db.query(AcademyYear).filter(AcademyYear.id == semester.academy_year_id).first() if semester else None
+        if batch:
+            semester_response = None
+            semester = db.query(Semester).filter(Semester.id == batch.semester_id).first()
+            if semester:
+                academy_year_response = None
+                academy_year = db.query(AcademyYear).filter(AcademyYear.id == semester.academy_year_id).first()
+                if academy_year:
+                    academy_year_response = AcademyYearResponse.from_orm(academy_year)
+                semester_response = SemesterResponse(id=semester.id, name=semester.name, start_date=semester.start_date, end_date=semester.end_date, academy_year=academy_year_response)
+            batch_response = BatchResponse(id=batch.id, name=batch.name, start_date=batch.start_date, end_date=batch.end_date, semester=semester_response)
+        
+        # 3. Lấy thông tin Chuyên ngành và Bộ môn
         major = db.query(Major).filter(Major.id == thesis.major_id).first()
         major_name = major.name if major else "Chuyên ngành không xác định"
+        
+        department_response = None
+        if thesis.department_id:
+            dept_model = db.query(Department).filter(Department.id == thesis.department_id).first()
+            if dept_model:
+                department_response = DepartmentResponse.from_orm(dept_model)
 
+        # 4. Tạo đối tượng trả về hoàn chỉnh
         results.append(ThesisResponse(
             id=thesis.id,
             thesis_type=thesis.thesis_type,
@@ -355,31 +377,17 @@ def get_theses_by_batch_id(db: Session, batch_id: UUID) -> list[ThesisResponse]:
                 "Đã được đăng ký" if thesis.status == 5 else
                 "Không xác định"
             ),
-            reason=thesis.reason,
             name=thesis.title,
             description=thesis.description,
             start_date=thesis.start_date,
             end_date=thesis.end_date,
-            instructors=instructors,
+            notes=thesis.notes,
+            reason=thesis.reason,
+            instructors=instructors_list,
+            reviewers=reviewers_list,
+            department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
-            batch={
-                "id": batch.id,
-                "name": batch.name,
-                "start_date": batch.start_date,
-                "end_date": batch.end_date,
-                "semester": {
-                    "id": semester.id,
-                    "name": semester.name,
-                    "start_date": semester.start_date,
-                    "end_date": semester.end_date,
-                    "academy_year": {
-                        "id": academy_year.id,
-                        "name": academy_year.name,
-                        "start_date": academy_year.start_date,
-                        "end_date": academy_year.end_date
-                    } if academy_year else None
-                } if semester else None
-            } if batch else None,
+            batch=batch_response,
             major=major_name
         ))
 
@@ -414,3 +422,63 @@ def get_all_batches_with_details(db: Session) -> list[BatchResponse]:
         ))
 
     return results
+
+def batch_update_theses(db: Session, update_request: ThesisBatchUpdateRequest, user_id: UUID):
+    success_count = 0
+    errors: List[BatchUpdateError] = []
+
+    thesis_ids = [item.id for item in update_request.theses]
+    theses_to_update = db.query(Thesis).filter(Thesis.id.in_(thesis_ids)).all()
+    
+    thesis_map = {str(t.id): t for t in theses_to_update}
+
+    for item in update_request.theses:
+        thesis_id_str = str(item.id)
+        
+        if thesis_id_str not in thesis_map:
+            errors.append(BatchUpdateError(id=item.id, error="Không tìm thấy đề tài."))
+            continue
+
+        db_thesis = thesis_map[thesis_id_str]
+
+        is_creator = db_thesis.create_by == user_id
+        is_instructor = db.query(ThesisLecturer).filter(
+            ThesisLecturer.thesis_id == item.id,
+            ThesisLecturer.lecturer_id == user_id
+        ).first() is not None
+
+        if not (is_creator or is_instructor):
+            errors.append(BatchUpdateError(id=item.id, error="Không có quyền cập nhật đề tài này."))
+            continue
+
+        try:
+            update_data = item.update_data.dict(exclude_unset=True) 
+            update_instructors = "instructor_ids" in update_data
+            update_reviewers = "reviewer_ids" in update_data
+
+            if update_instructors or update_reviewers:
+                db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == item.id).delete(synchronize_session=False)
+                if update_instructors:
+                    new_instructor_ids = update_data.pop("instructor_ids")
+                    for lec_id in new_instructor_ids:
+                        db.add(ThesisLecturer(lecturer_id=lec_id, thesis_id=item.id, role=1))
+
+                # Thêm lại danh sách giảng viên phản biện mới (nếu có)
+                if update_reviewers:
+                    new_reviewer_ids = update_data.pop("reviewer_ids")
+                    for rev_id in new_reviewer_ids:
+                        db.add(ThesisLecturer(lecturer_id=rev_id, thesis_id=item.id, role=2))
+            # Cập nhật các trường thông tin còn lại
+            for key, value in update_data.items():
+                if hasattr(db_thesis, key):
+                    setattr(db_thesis, key, value)
+            
+            db_thesis.update_datetime = datetime.utcnow()
+            success_count += 1
+        except Exception as e:
+            errors.append(BatchUpdateError(id=item.id, error=str(e)))
+
+    if success_count > 0:
+        db.commit()
+
+    return {"success_count": success_count, "errors": errors}
