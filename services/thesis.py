@@ -268,6 +268,7 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
             instructors=instructors_list, # Trả về danh sách GVHD
             reviewers=reviewers_list,   
             department=department_response,
+            committee_id=thesis.committee_id,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch={
                 "id": batch.id,
@@ -367,7 +368,8 @@ def get_theses_by_major_id(db: Session, major_id: UUID) -> list[ThesisResponse]:
             department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch=batch_response,
-            major=major_name
+            major=major_name,
+            committee_id=thesis.committee_id
         ))
     return results
 
@@ -466,7 +468,8 @@ def get_theses_by_batch_id(db: Session, batch_id: UUID) -> list[ThesisResponse]:
             department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch=batch_response,
-            major=major_name
+            major=major_name,
+            committee_id=thesis.committee_id
         ))
 
     return results
@@ -555,7 +558,8 @@ def get_theses_by_batch_and_major(db: Session, batch_id: UUID, major_id: UUID) -
             department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch=batch_response,
-            major=major_name
+            major=major_name,
+            committee_id=thesis.committee_id
         ))
         
     return results

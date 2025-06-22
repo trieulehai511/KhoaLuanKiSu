@@ -160,6 +160,7 @@ class Thesis(Base):
     department_id = Column(Integer, ForeignKey("department.id"), nullable=True)
     reason = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    committee_id = Column(UUID, nullable=True)
 
 
 class ThesisLecturer(Base):
@@ -239,6 +240,7 @@ class Committee(Base):
     chairman_id = Column(UUID, nullable=True)  # Giảng viên làm chủ tịch hội đồng
     meeting_time = Column(DateTime, nullable=True)
     note = Column(String, nullable=True)
+    location = Column(String, nullable=True)
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -262,6 +264,7 @@ class Task(Base):
     description = Column(String, nullable=True)
     due_date = Column(DateTime, nullable=True)
     status = Column(Integer, default=1) # 1: Cần làm, 2: Đang làm, 3: Đã xong
+    priority = Column(Integer, default=2, nullable=False)  # Quy ước: 1: Thấp, 2: Trung bình, 3: Cao
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
     

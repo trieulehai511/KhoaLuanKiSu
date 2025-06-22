@@ -115,6 +115,7 @@ class ThesisResponse(BaseModel):
     reason: Optional[str]
     name_thesis_type: str
     notes: Optional[str]
+    committee_id: Optional[UUID] = None
 
     class Config:
         orm_mode = True

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models.model import Group, GroupMember, Information, Invite, StudentInfo, Thesis, ThesisLecturer
+from models.model import Group, GroupMember, Information, Invite, Mission, StudentInfo, Thesis, ThesisLecturer
 from schemas.group import (
     GroupCreate, GroupUpdate, GroupMemberCreate, 
     GroupWithMembersResponse, MemberDetailResponse
@@ -45,7 +45,7 @@ def add_member(db: Session, group_id: UUID, member: GroupMemberCreate, leader_id
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ nhóm trưởng mới có quyền thêm thành viên.")
 
     # 2. Kiểm tra giới hạn thành viên
-    if group.quantity >= 4:
+    if group.quantity >= 3:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nhóm đã đủ số lượng thành viên.")
 
     # 3. Kiểm tra xem người được thêm đã ở trong nhóm khác chưa
@@ -346,6 +346,18 @@ def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail=f"Đăng ký thất bại. Thành viên '{student_name}' đã đăng ký một {thesis_type_name} khác trong đợt này."
         )
+    
+    existing_mission = db.query(Mission).filter(Mission.thesis_id == thesis_id).first()
+    if not existing_mission:
+        default_mission = Mission(
+            thesis_id=thesis_id,
+            title=f"Tiến độ thực hiện: {thesis_to_register.title}",
+            description="Các công việc cần thực hiện cho đề tài.",
+            start_date=thesis_to_register.start_date,
+            end_date=thesis_to_register.end_date,
+            status=1 # 1: Chưa bắt đầu
+        )
+        db.add(default_mission)
     group.thesis_id = thesis_id
     thesis_to_register.status = 5
     
