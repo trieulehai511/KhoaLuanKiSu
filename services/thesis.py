@@ -82,51 +82,61 @@ def create(db: Session, thesis: ThesisCreate, lecturer_id: uuid.UUID):
     # 7. Trả về thông tin chi tiết của đề tài vừa tạo
     return get_thesis_by_id(db, db_thesis.id)
 
-def update_thesis(db: Session, thesis_id: UUID, thesis: ThesisUpdate, user_id: UUID):
+def update_thesis(db: Session, thesis_id: UUID, thesis_update_data: ThesisUpdate, user_id: UUID) -> ThesisResponse:
+    """
+    Cập nhật thông tin một đề tài, bao gồm cả GVHD và GVPB.
+    Sau khi cập nhật, status sẽ được tự động chuyển về 3.
+    """
     db_thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not db_thesis:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thesis not found"
+            detail="Không tìm thấy đề tài."
         )
-    update_data = thesis.dict(exclude_unset=True)
-    if "batch_id" in update_data:
-        batch = db.query(Batch).filter(Batch.id == update_data["batch_id"]).first()
-        if not batch:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid batch ID"
-            )
 
-    # ✅ Nếu có lecturer_ids, kiểm tra và cập nhật
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not (db_thesis.create_by == user_id or (current_user and current_user.user_type == 1)):
+         raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền sửa đề tài này."
+        )
+
+    update_data = thesis_update_data.dict(exclude_unset=True)
+
     if "lecturer_ids" in update_data:
-        lecturer_ids = update_data.pop("lecturer_ids")
-        # Kiểm tra tính hợp lệ
-        valid_lecturers = db.query(User).filter(User.id.in_(lecturer_ids), User.user_type == 3).all()
-        if len(valid_lecturers) != len(lecturer_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Một hoặc nhiều giảng viên không hợp lệ hoặc không tồn tại"
-            )
-
-        # Xoá toàn bộ giảng viên cũ
-        db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis_id).delete()
-
-        # Thêm giảng viên mới
-        for l_id in lecturer_ids:
-            db.add(ThesisLecturer(
-                lecturer_id=l_id,
-                thesis_id=thesis_id,
-                role=1  # Mặc định
-            ))
-
-    # Cập nhật các trường còn lại
+        instructor_ids = update_data.pop("lecturer_ids")
+        if instructor_ids: 
+            valid_instructors = db.query(User).filter(User.id.in_(instructor_ids), User.user_type == 3).count()
+            if valid_instructors != len(instructor_ids):
+                raise HTTPException(status_code=400, detail="Một hoặc nhiều ID giảng viên hướng dẫn không hợp lệ.")
+        db.query(ThesisLecturer).filter(
+            ThesisLecturer.thesis_id == thesis_id,
+            ThesisLecturer.role == 1
+        ).delete(synchronize_session=False)
+        for lec_id in instructor_ids:
+            db.add(ThesisLecturer(lecturer_id=lec_id, thesis_id=thesis_id, role=1))
+    if "reviewer_ids" in update_data:
+        reviewer_ids = update_data.pop("reviewer_ids")
+        if reviewer_ids: 
+            valid_reviewers = db.query(User).filter(User.id.in_(reviewer_ids), User.user_type == 3).count()
+            if valid_reviewers != len(reviewer_ids):
+                raise HTTPException(status_code=400, detail="Một hoặc nhiều ID giảng viên phản biện không hợp lệ.")
+        db.query(ThesisLecturer).filter(
+            ThesisLecturer.thesis_id == thesis_id,
+            ThesisLecturer.role == 2
+        ).delete(synchronize_session=False)
+        for rev_id in reviewer_ids:
+            db.add(ThesisLecturer(lecturer_id=rev_id, thesis_id=thesis_id, role=2))
+    if 'status' in update_data:
+        del update_data['status']
     for key, value in update_data.items():
         setattr(db_thesis, key, value)
-
+    db_thesis.status = 3
     db_thesis.update_datetime = datetime.utcnow()
+    
     db.commit()
     db.refresh(db_thesis)
+
     return get_thesis_by_id(db, db_thesis.id)
 
 def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:

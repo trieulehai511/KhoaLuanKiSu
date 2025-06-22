@@ -56,7 +56,7 @@ def create_student_profile(db: Session, profile_data: StudentCreateProfile, user
 
 
 def update_student_profile(db: Session, profile_data: StudentUpdateProfile, user_id):
-    # Tìm và cập nhật thông tin cá nhân
+    # Tìm và cập nhật thông tin cá nhân và thông tin sinh viên
     info = db.query(Information).filter(Information.user_id == user_id).first()
     student = db.query(StudentInfo).filter(StudentInfo.user_id == user_id).first()
 
@@ -73,22 +73,26 @@ def update_student_profile(db: Session, profile_data: StudentUpdateProfile, user
     db.refresh(info)
     db.refresh(student)
 
-    # Lấy tên chuyên ngành
+    # === PHẦN SỬA LỖI BẮT ĐẦU TẠI ĐÂY ===
+
+    # 1. Truy vấn thông tin User để lấy user_name
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        # Trường hợp này khó xảy ra nhưng vẫn nên kiểm tra
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+    # 2. Lấy các thông tin phụ khác như cũ
     major = db.query(Major).filter(Major.id == student.major_id).first()
     major_name = major.name if major else "Không rõ"
 
-    # Map giới tính
-    gender_map = {
-        0: "Bê đê",
-        1: "Nam",
-        2: "Nữ"
-    }
+    gender_map = {0: "Bê đê", 1: "Nam", 2: "Nữ"}
     gender_int = int(info.gender) if info.gender is not None else -1
     gender_str = gender_map.get(gender_int, "Không rõ")
 
-    # Trả về dữ liệu đầy đủ
+    # 3. Trả về dữ liệu đầy đủ, BỔ SUNG THÊM user_name
     return StudentFullProfile(
         user_id=user_id,
+        user_name=user.user_name,  # <--- BỔ SUNG TRƯỜNG CÒN THIẾU
         information=InformationResponse(
             id=info.id,
             user_id=info.user_id,

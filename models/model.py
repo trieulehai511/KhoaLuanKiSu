@@ -241,6 +241,7 @@ class Committee(Base):
     meeting_time = Column(DateTime, nullable=True)
     note = Column(String, nullable=True)
     location = Column(String, nullable=True)
+    major_id = Column(UUID, nullable=False) 
     create_datetime = Column(DateTime, default=func.now())
     update_datetime = Column(DateTime, default=func.now(), onupdate=func.now())
 
