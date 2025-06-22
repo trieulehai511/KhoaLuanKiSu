@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models.model import Group, GroupMember, Information, Invite, StudentInfo, Thesis
+from models.model import Group, GroupMember, Information, Invite, StudentInfo, Thesis, ThesisLecturer
 from schemas.group import (
     GroupCreate, GroupUpdate, GroupMemberCreate, 
     GroupWithMembersResponse, MemberDetailResponse
@@ -133,6 +133,7 @@ def get_all_groups_for_user(db: Session, user_id: UUID) -> List[GroupWithMembers
     
     for membership in user_memberships:
         group_id = membership.group_id
+        # Đối tượng group ở đây đã chứa thông tin thesis_id
         group = db.query(Group).filter(Group.id == group_id).first()
         if not group:
             continue
@@ -158,11 +159,52 @@ def get_all_groups_for_user(db: Session, user_id: UUID) -> List[GroupWithMembers
             id=group.id,
             name=group.name,
             leader_id=group.leader_id,
-            members=member_details_list
+            members=member_details_list,
+            # THÊM DỮ LIỆU VÀO ĐÂY
+            thesis_id=group.thesis_id
         )
         all_groups_list.append(group_obj)
 
     return all_groups_list
+
+def get_supervised_groups_by_lecturer(db: Session, lecturer_id: UUID) -> List[GroupWithMembersResponse]:
+    """Lấy tất cả các nhóm mà một giảng viên đang hướng dẫn."""
+    
+    # 1. Tìm tất cả các đề tài mà giảng viên này đang hướng dẫn (role=1)
+    supervised_theses_query = db.query(ThesisLecturer.thesis_id).filter(
+        ThesisLecturer.lecturer_id == lecturer_id,
+        ThesisLecturer.role == 1
+    ).distinct()
+    
+    supervised_thesis_ids = [item[0] for item in supervised_theses_query.all()]
+
+    if not supervised_thesis_ids:
+        return []
+
+    # 2. Từ danh sách đề tài, tìm các nhóm tương ứng
+    groups = db.query(Group).filter(Group.thesis_id.in_(supervised_thesis_ids)).all()
+    
+    # 3. Lấy thông tin chi tiết cho từng nhóm
+    results = []
+    for group in groups:
+        # Tái sử dụng hàm đã có để lấy chi tiết nhóm
+        group_details = get_group_with_detailed_members(db, group.id)
+        if group_details:
+            results.append(group_details)
+            
+    return results
+
+def get_all_groups_for_admin(db: Session) -> List[GroupWithMembersResponse]:
+    """Lấy tất cả các nhóm trong hệ thống."""
+    all_groups = db.query(Group).order_by(Group.create_datetime.desc()).all()
+    
+    results = []
+    for group in all_groups:
+        group_details = get_group_with_detailed_members(db, group.id)
+        if group_details:
+            results.append(group_details)
+            
+    return results
 
 def update_group_name(db: Session, group_id: UUID, new_name: str, user_id: UUID):
     """Cập nhật tên của một nhóm (chỉ nhóm trưởng)"""
@@ -210,7 +252,7 @@ def get_detailed_members_of_group(db: Session, group_id: UUID) -> List[MemberDet
 # HÀM MỚI ĐỂ GỘP THÔNG TIN NHÓM VÀ THÀNH VIÊN
 def get_group_with_detailed_members(db: Session, group_id: UUID) -> GroupWithMembersResponse:
     """Lấy thông tin chi tiết của nhóm và danh sách thành viên của nó."""
-    # 1. Lấy thông tin cơ bản của nhóm
+    # 1. Lấy thông tin cơ bản của nhóm (đã chứa thesis_id)
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy nhóm.")
@@ -223,6 +265,7 @@ def get_group_with_detailed_members(db: Session, group_id: UUID) -> GroupWithMem
         id=group.id,
         name=group.name,
         leader_id=group.leader_id,
+        thesis_id=group.thesis_id,
         members=members_list
     )
     
@@ -251,6 +294,7 @@ def delete_group(db: Session, group_id: UUID, user_id: UUID):
 
 def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user_id: UUID):
     """Đăng ký một đề tài cho nhóm (chỉ nhóm trưởng)"""
+    
     # 1. Kiểm tra nhóm và quyền nhóm trưởng
     group = db.query(Group).filter(Group.id == group_id).first()
     if not group:
@@ -261,8 +305,8 @@ def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user
         raise HTTPException(status_code=400, detail="Nhóm này đã đăng ký đề tài khác.")
 
     # 2. Kiểm tra đề tài
-    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
-    if not thesis:
+    thesis_to_register = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    if not thesis_to_register:
         raise HTTPException(status_code=404, detail="Không tìm thấy đề tài.")
     
     # 3. Kiểm tra xem đề tài đã có nhóm nào đăng ký chưa
@@ -270,9 +314,40 @@ def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user
     if is_thesis_taken:
         raise HTTPException(status_code=400, detail="Đề tài này đã được nhóm khác đăng ký.")
 
-    # 4. Gán đề tài cho nhóm và cập nhật trạng thái
+    # --- LOGIC MỚI: KIỂM TRA RÀNG BUỘC CỦA TỪNG THÀNH VIÊN ---
+    
+    # 3.5 Lấy tất cả thành viên của nhóm đang đăng ký
+    members_in_group = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
+    student_ids = [member.student_id for member in members_in_group]
+
+    # Tìm xem có sinh viên nào trong nhóm đã đăng ký đề tài cùng loại và cùng đợt chưa
+    conflicting_registration = db.query(Thesis).join(
+        Group, Thesis.id == Group.thesis_id
+    ).join(
+        GroupMember, Group.id == GroupMember.group_id
+    ).filter(
+        GroupMember.student_id.in_(student_ids),
+        Thesis.batch_id == thesis_to_register.batch_id,
+        Thesis.thesis_type == thesis_to_register.thesis_type
+    ).first()
+
+    if conflicting_registration:
+        # Nếu tìm thấy, xác định sinh viên vi phạm để báo lỗi cụ thể
+        conflicting_student_id = db.query(GroupMember.student_id).filter(
+            GroupMember.group_id == conflicting_registration.group.id,
+            GroupMember.student_id.in_(student_ids)
+        ).first()[0]
+        
+        student_info = db.query(Information).filter(Information.user_id == conflicting_student_id).first()
+        student_name = f"{student_info.last_name} {student_info.first_name}" if student_info else f"ID: {conflicting_student_id}"
+        thesis_type_name = "Khóa luận" if thesis_to_register.thesis_type == 1 else "Đồ án"
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Đăng ký thất bại. Thành viên '{student_name}' đã đăng ký một {thesis_type_name} khác trong đợt này."
+        )
     group.thesis_id = thesis_id
-    thesis.status = 2 # Giả sử 2 là trạng thái "Đã đăng ký"
+    thesis_to_register.status = 5
     
     db.commit()
     db.refresh(group)

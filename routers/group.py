@@ -3,7 +3,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from db.database import get_db
 from services.group import (
-    create_group, add_member, delete_group, get_all_groups_for_user, get_group_with_detailed_members, register_thesis_for_group, remove_member, transfer_leader, update_group_name
+    create_group, add_member, delete_group, get_all_groups_for_admin, get_all_groups_for_user, get_group_with_detailed_members, get_supervised_groups_by_lecturer, register_thesis_for_group, remove_member, transfer_leader, update_group_name
 )
 from schemas.group import GroupCreate, GroupMemberCreate, GroupMemberResponse, GroupResponse, GroupWithMembersResponse, MemberDetailResponse
 from routers.auth import PathChecker, get_current_user
@@ -15,10 +15,38 @@ router = APIRouter(
     tags=["group"]
 )
 
+@router.get("/get-all-admin", response_model=List[GroupWithMembersResponse])
+def get_all_groups_admin_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    API để admin xem tất cả các nhóm trong hệ thống.
+    """
+    # Kiểm tra quyền, user_type=1 là Admin
+    if user.user_type != 1:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ admin mới có quyền truy cập.")
+        
+    return get_all_groups_for_admin(db)
+
 @router.post("",response_model=GroupResponse)
 def create_new_group(group: GroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Tạo nhóm mới"""
     return create_group(db, group, user.id)
+
+@router.get("/supervised-by-me", response_model=List[GroupWithMembersResponse])
+def get_my_supervised_groups_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    API để giảng viên đang đăng nhập xem các nhóm mình hướng dẫn.
+    """
+    # Kiểm tra quyền, user_type=3 là Giảng viên
+    if user.user_type != 3:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ giảng viên mới có quyền truy cập.")
+        
+    return get_supervised_groups_by_lecturer(db, lecturer_id=user.id)
 
 @router.post("/{group_id}/add-member",response_model=GroupMemberResponse)
 def add_group_member(group_id: UUID, member: GroupMemberCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

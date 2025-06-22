@@ -41,6 +41,7 @@ class GroupWithMembersResponse(BaseModel):
     name: Optional[str] = None
     leader_id: UUID
     members: List[MemberDetailResponse]
+    thesis_id: Optional[UUID] = None
 
     class Config:
         orm_mode = True
