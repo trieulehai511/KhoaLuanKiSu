@@ -29,6 +29,7 @@ class ThesisUpdate(BaseModel):
     batch_id: Optional[UUID] = None
     major_id: Optional[UUID] = None
     lecturer_ids: Optional[List[UUID]] = None  #
+    reviewer_ids: Optional[List[UUID]] = None 
     reason: Optional[str] = None
 
 class InstructorResponse(BaseModel):

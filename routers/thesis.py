@@ -453,10 +453,9 @@ def update_thesis_endpoint(
 ):
     """
     API để cập nhật thông tin một luận văn (thesis).
-    Chỉ cho phép giảng viên tạo đề tài đó được sửa.
+    Sau khi cập nhật, status sẽ tự động được đưa về trạng thái 3.
     """
-    update_thesis(db, thesis_id, thesis, user.id)
-    return get_thesis_by_id(db, thesis_id)
+    return update_thesis(db, thesis_id, thesis, user.id)
 
 
 

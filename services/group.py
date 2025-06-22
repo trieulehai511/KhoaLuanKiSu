@@ -304,49 +304,66 @@ def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user
     if group.thesis_id:
         raise HTTPException(status_code=400, detail="Nhóm này đã đăng ký đề tài khác.")
 
-    # 2. Kiểm tra đề tài
+    # 2. Kiểm tra đề tài và trạng thái của nó
     thesis_to_register = db.query(Thesis).filter(Thesis.id == thesis_id).first()
     if not thesis_to_register:
         raise HTTPException(status_code=404, detail="Không tìm thấy đề tài.")
+    
+    # --- THÊM ĐIỀU KIỆN KIỂM TRA STATUS = 4 ---
+    if thesis_to_register.status != 4:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Đề tài này không ở trạng thái sẵn sàng để đăng ký."
+        )
+    # --------------------------------------------
     
     # 3. Kiểm tra xem đề tài đã có nhóm nào đăng ký chưa
     is_thesis_taken = db.query(Group).filter(Group.thesis_id == thesis_id).first()
     if is_thesis_taken:
         raise HTTPException(status_code=400, detail="Đề tài này đã được nhóm khác đăng ký.")
 
-    # --- LOGIC MỚI: KIỂM TRA RÀNG BUỘC CỦA TỪNG THÀNH VIÊN ---
+    # === LOGIC KIỂM TRA RÀNG BUỘC THÀNH VIÊN ĐÃ ĐƯỢC VIẾT LẠI (KHÔNG DÙNG JOIN) ===
     
-    # 3.5 Lấy tất cả thành viên của nhóm đang đăng ký
+    # Lấy ID của các sinh viên trong nhóm đang đăng ký
     members_in_group = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
     student_ids = [member.student_id for member in members_in_group]
 
-    # Tìm xem có sinh viên nào trong nhóm đã đăng ký đề tài cùng loại và cùng đợt chưa
-    conflicting_registration = db.query(Thesis).join(
-        Group, Thesis.id == Group.thesis_id
-    ).join(
-        GroupMember, Group.id == GroupMember.group_id
-    ).filter(
-        GroupMember.student_id.in_(student_ids),
-        Thesis.batch_id == thesis_to_register.batch_id,
-        Thesis.thesis_type == thesis_to_register.thesis_type
-    ).first()
+    # Tìm tất cả các nhóm mà các sinh viên này đang là thành viên
+    all_memberships = db.query(GroupMember).filter(GroupMember.student_id.in_(student_ids)).all()
+    all_group_ids = {membership.group_id for membership in all_memberships}
 
-    if conflicting_registration:
-        # Nếu tìm thấy, xác định sinh viên vi phạm để báo lỗi cụ thể
-        conflicting_student_id = db.query(GroupMember.student_id).filter(
-            GroupMember.group_id == conflicting_registration.group.id,
-            GroupMember.student_id.in_(student_ids)
-        ).first()[0]
-        
-        student_info = db.query(Information).filter(Information.user_id == conflicting_student_id).first()
-        student_name = f"{student_info.last_name} {student_info.first_name}" if student_info else f"ID: {conflicting_student_id}"
-        thesis_type_name = "Khóa luận" if thesis_to_register.thesis_type == 1 else "Đồ án"
-        
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Đăng ký thất bại. Thành viên '{student_name}' đã đăng ký một {thesis_type_name} khác trong đợt này."
-        )
+    # Từ các nhóm đó, lấy ra danh sách các đề tài đã được đăng ký
+    groups_with_theses = db.query(Group).filter(Group.id.in_(all_group_ids), Group.thesis_id.isnot(None)).all()
+    existing_thesis_ids = {g.thesis_id for g in groups_with_theses}
     
+    # Kiểm tra xem có đề tài nào trong danh sách đã đăng ký trùng đợt và loại với đề tài hiện tại không
+    if existing_thesis_ids:
+        conflicting_registration = db.query(Thesis).filter(
+            Thesis.id.in_(existing_thesis_ids),
+            Thesis.batch_id == thesis_to_register.batch_id,
+            Thesis.thesis_type == thesis_to_register.thesis_type
+        ).first()
+
+        if conflicting_registration:
+            # Nếu có, tìm ra sinh viên vi phạm để báo lỗi cụ thể
+            conflicting_group = db.query(Group).filter(Group.thesis_id == conflicting_registration.id).first()
+            conflicting_member_record = db.query(GroupMember).filter(
+                GroupMember.group_id == conflicting_group.id,
+                GroupMember.student_id.in_(student_ids)
+            ).first()
+            
+            conflicting_student_id = conflicting_member_record.student_id
+            student_info = db.query(Information).filter(Information.user_id == conflicting_student_id).first()
+            student_name = f"{student_info.last_name} {student_info.first_name}" if student_info else f"ID: {conflicting_student_id}"
+            thesis_type_name = "Khóa luận" if thesis_to_register.thesis_type == 1 else "Đồ án"
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Đăng ký thất bại. Thành viên '{student_name}' đã đăng ký một {thesis_type_name} khác trong đợt này."
+            )
+    # =================================================================================
+
+    # Tự động tạo mission nếu chưa có
     existing_mission = db.query(Mission).filter(Mission.thesis_id == thesis_id).first()
     if not existing_mission:
         default_mission = Mission(
@@ -358,8 +375,10 @@ def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user
             status=1 # 1: Chưa bắt đầu
         )
         db.add(default_mission)
+
+    # Cập nhật thông tin và lưu
     group.thesis_id = thesis_id
-    thesis_to_register.status = 5
+    thesis_to_register.status = 5 # Chuyển trạng thái thành "Đã đăng ký"
     
     db.commit()
     db.refresh(group)

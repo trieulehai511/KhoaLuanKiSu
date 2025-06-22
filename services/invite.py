@@ -100,8 +100,8 @@ def accept_invite(db: Session, invite_id: UUID, receiver_id: UUID):
         ).update({"group_id": new_group.id})
 
     else:
-        if group.quantity >= 4:
-            raise HTTPException(status_code=400, detail="Nhóm đã đủ số lượng thành viên (tối đa 4 người).")
+        if group.quantity >= 3:
+            raise HTTPException(status_code=400, detail="Nhóm đã đủ số lượng thành viên (tối đa 3 người).")
         new_member = GroupMember(group_id=group.id, student_id=receiver_id, is_leader=False)
         db.add(new_member)
         group.quantity += 1
