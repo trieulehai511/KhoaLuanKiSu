@@ -391,6 +391,7 @@ def import_thesis_from_simple_excel(
                     instructors=instructors_list,
                     reviewers=reviewers_list,
                     department=department_response,
+                    committee_id=thesis.committee_id,
                     name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
                     batch={
                         "id": batch.id,

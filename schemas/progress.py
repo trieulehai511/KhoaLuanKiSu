@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -28,6 +28,7 @@ class TaskBase(BaseModel):
     description: Optional[str] = None
     due_date: Optional[datetime] = None
     status: int = 1
+    priority: int = 2
 
 class TaskCreate(TaskBase):
     pass
@@ -39,10 +40,26 @@ class TaskResponse(TaskBase):
     id: UUID
     mission_id: UUID
     comments: List[TaskCommentResponse] = []
-
+    priority_text: str = "" 
+    
     class Config:
         orm_mode = True
+    @validator('priority_text', always=True)
+    def set_priority_text(cls, v, values):
+        priority_int = values.get('priority')
+        if priority_int == 1:
+            return "Thấp"
+        if priority_int == 3:
+            return "Cao"
+        return "Trung bình"
 
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+    status: Optional[int] = None
+    priority: Optional[int] = None
+    
 # --- Mission Schemas ---
 class MissionBase(BaseModel):
     title: str
@@ -61,3 +78,4 @@ class MissionResponse(MissionBase):
 
     class Config:
         orm_mode = True
+
