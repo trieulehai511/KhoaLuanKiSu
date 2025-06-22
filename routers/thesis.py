@@ -1,14 +1,14 @@
 from datetime import datetime
 from io import BytesIO
 import logging
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Dict, List
 from db.database import get_db
 import pandas as pd
-from models.model import AcademyYear, Batch, Department, Information, LecturerInfo, Major, Semester, Thesis, ThesisLecturer, User
+from models.model import AcademyYear, Batch, Department, Information, LecturerInfo, Major, Semester, StudentInfo, Thesis, ThesisLecturer, User
 from schemas.thesis import BatchResponse, BatchSimpleResponse, DepartmentResponse, InstructorResponse, MajorResponse, ThesisBatchUpdateRequest, ThesisBatchUpdateResponse, ThesisCreate, ThesisUpdate, ThesisResponse
 from services.thesis import (
     batch_update_theses,
@@ -16,7 +16,9 @@ from services.thesis import (
     get_all_batches_with_details,
     get_all_departments,
     get_all_majors,
+    get_theses_by_batch_and_major,
     get_theses_by_batch_id,
+    get_theses_by_major_id,
     update_thesis,
     get_thesis_by_id,
     get_all_theses,
@@ -30,6 +32,36 @@ router = APIRouter(
     prefix="/theses",
     tags=["theses"]
 )
+#================================== API GET #=====================================================
+
+@router.get("/", response_model=List[ThesisResponse])
+def get_all_theses_endpoint(db: Session = Depends(get_db)):
+    """
+    API để lấy danh sách tất cả các luận văn (theses) với thông tin của tất cả giảng viên hướng dẫn.
+    """
+    return get_all_theses(db)
+
+@router.get("/get-all/by-my-major", response_model=List[ThesisResponse])
+def get_theses_by_student_major_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    API để lấy danh sách đề tài theo chuyên ngành của sinh viên đang đăng nhập.
+    """
+    # 1. Tìm thông tin sinh viên của người dùng đang đăng nhập
+    student_info = db.query(StudentInfo).filter(StudentInfo.user_id == user.id).first()
+
+    # 2. Kiểm tra xem người dùng có phải là sinh viên và có thông tin không
+    if not student_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy thông tin sinh viên của người dùng này."
+        )
+    
+    # 3. Lấy ra major_id và gọi service
+    user_major_id = student_info.major_id
+    return get_theses_by_major_id(db, major_id=user_major_id)
 
 @router.get("/download-template", summary="Tải file Excel mẫu")
 def download_template():
@@ -70,6 +102,69 @@ def download_template():
         filename="thesis_template.xlsx",
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+
+@router.get("/getall/major", response_model=List[MajorResponse])
+def get_all_majors_endpoint(db: Session = Depends(get_db)):
+    """
+    API để lấy danh sách tất cả chuyên ngành (major).
+    """
+    return get_all_majors(db)
+
+@router.get("/getall/department/g", response_model=List[DepartmentResponse])
+def get_all_departments_endpoint(db: Session = Depends(get_db)):
+    """
+    API để lấy danh sách tất cả khoa (department).
+    """
+    return get_all_departments(db)
+
+@router.get("/getall/batches", response_model=List[BatchResponse])
+def get_all_batches_endpoint(db: Session = Depends(get_db)):
+    """
+    API lấy danh sách các đợt (batch) kèm học kỳ và năm học, sắp xếp từ mới đến cũ.
+    """
+    return get_all_batches_with_details(db)
+
+@router.get("/by-batch/{batch_id}", response_model=List[ThesisResponse])
+def get_theses_by_batch_endpoint(batch_id: UUID, db: Session = Depends(get_db)):
+    """
+    API lấy danh sách luận văn theo đợt (batch_id).
+    """
+    return get_theses_by_batch_id(db, batch_id)
+
+@router.get("/batch/{batch_id}/my-major", response_model=List[ThesisResponse])
+def get_theses_by_batch_and_my_major_endpoint(
+    batch_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    API để lấy danh sách đề tài theo một đợt cụ thể VÀ 
+    theo chuyên ngành của sinh viên đang đăng nhập.
+    """
+    # 1. Tìm thông tin sinh viên để lấy chuyên ngành
+    student_info = db.query(StudentInfo).filter(StudentInfo.user_id == user.id).first()
+    if not student_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy thông tin sinh viên của người dùng này."
+        )
+    
+    # 2. Lấy ra major_id
+    user_major_id = student_info.major_id
+    
+    # 3. Gọi service với cả hai điều kiện
+    return get_theses_by_batch_and_major(db, batch_id=batch_id, major_id=user_major_id)
+
+@router.get("/{thesis_id}", response_model=ThesisResponse)
+def get_thesis_by_id_endpoint(thesis_id: UUID, db: Session = Depends(get_db)):
+    """
+    API để lấy thông tin một luận văn (thesis) theo ID.
+    """
+    return get_thesis_by_id(db, thesis_id)
+#================================== API GET #=====================================================
+#================================== API GET #=====================================================
+#================================== API GET #=====================================================
 
 # Thiết lập logging
 # Thiết lập logging
@@ -364,22 +459,6 @@ def update_thesis_endpoint(
 
 
 
-
-
-@router.get("/{thesis_id}", response_model=ThesisResponse)
-def get_thesis_by_id_endpoint(thesis_id: UUID, db: Session = Depends(get_db)):
-    """
-    API để lấy thông tin một luận văn (thesis) theo ID.
-    """
-    return get_thesis_by_id(db, thesis_id)
-
-@router.get("/", response_model=List[ThesisResponse])
-def get_all_theses_endpoint(db: Session = Depends(get_db)):
-    """
-    API để lấy danh sách tất cả các luận văn (theses) với thông tin của tất cả giảng viên hướng dẫn.
-    """
-    return get_all_theses(db)
-
 @router.delete("/{thesis_id}")
 def delete_thesis_endpoint(
     thesis_id: UUID,
@@ -390,31 +469,3 @@ def delete_thesis_endpoint(
     """
     return delete_thesis(db, thesis_id)
 
-@router.get("/getall/major", response_model=List[MajorResponse])
-def get_all_majors_endpoint(db: Session = Depends(get_db)):
-    """
-    API để lấy danh sách tất cả chuyên ngành (major).
-    """
-    return get_all_majors(db)
-
-@router.get("/getall/department/g", response_model=List[DepartmentResponse])
-def get_all_departments_endpoint(db: Session = Depends(get_db)):
-    """
-    API để lấy danh sách tất cả khoa (department).
-    """
-    return get_all_departments(db)
-
-@router.get("/by-batch/{batch_id}", response_model=List[ThesisResponse])
-def get_theses_by_batch_endpoint(batch_id: UUID, db: Session = Depends(get_db)):
-    """
-    API lấy danh sách luận văn theo đợt (batch_id).
-    """
-    return get_theses_by_batch_id(db, batch_id)
-
-
-@router.get("/getall/batches", response_model=List[BatchResponse])
-def get_all_batches_endpoint(db: Session = Depends(get_db)):
-    """
-    API lấy danh sách các đợt (batch) kèm học kỳ và năm học, sắp xếp từ mới đến cũ.
-    """
-    return get_all_batches_with_details(db)
