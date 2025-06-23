@@ -349,6 +349,7 @@ def import_thesis_from_simple_excel(
 
                         if user_info:
                             lecturer_details = InstructorResponse(
+                                id=tl.lecturer_id,  
                                 name=f"{user_info.last_name} {user_info.first_name}",
                                 email=lecturer_info.email,
                                 lecturer_code=lecturer_info.lecturer_code,
@@ -385,6 +386,7 @@ def import_thesis_from_simple_excel(
                     ),
                     reason=thesis.reason,
                     name=thesis.title,
+                    major_id=thesis.major_id,
                     description=thesis.description,
                     start_date=thesis.start_date,
                     end_date=thesis.end_date,

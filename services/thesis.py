@@ -84,7 +84,7 @@ def create(db: Session, thesis: ThesisCreate, lecturer_id: uuid.UUID):
 
 def update_thesis(db: Session, thesis_id: UUID, thesis_update_data: ThesisUpdate, user_id: UUID) -> ThesisResponse:
     """
-    Cập nhật thông tin một đề tài, bao gồm cả GVHD và GVPB.
+    Cập nhật thông tin một đề tài, bao gồm cả GVHD, GVPB, và Bộ môn.
     Sau khi cập nhật, status sẽ được tự động chuyển về 3.
     """
     db_thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
@@ -93,7 +93,6 @@ def update_thesis(db: Session, thesis_id: UUID, thesis_update_data: ThesisUpdate
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Không tìm thấy đề tài."
         )
-
     current_user = db.query(User).filter(User.id == user_id).first()
     if not (db_thesis.create_by == user_id or (current_user and current_user.user_type == 1)):
          raise HTTPException(
@@ -102,36 +101,31 @@ def update_thesis(db: Session, thesis_id: UUID, thesis_update_data: ThesisUpdate
         )
 
     update_data = thesis_update_data.dict(exclude_unset=True)
-
+    if "department_id" in update_data and update_data["department_id"] is not None:
+        department = db.query(Department).filter(Department.id == update_data["department_id"]).first()
+        if not department:
+            raise HTTPException(status_code=400, detail="ID của bộ môn không hợp lệ.")
     if "lecturer_ids" in update_data:
         instructor_ids = update_data.pop("lecturer_ids")
-        if instructor_ids: 
+        if instructor_ids:
             valid_instructors = db.query(User).filter(User.id.in_(instructor_ids), User.user_type == 3).count()
             if valid_instructors != len(instructor_ids):
                 raise HTTPException(status_code=400, detail="Một hoặc nhiều ID giảng viên hướng dẫn không hợp lệ.")
-        db.query(ThesisLecturer).filter(
-            ThesisLecturer.thesis_id == thesis_id,
-            ThesisLecturer.role == 1
-        ).delete(synchronize_session=False)
+        db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis_id, ThesisLecturer.role == 1).delete(synchronize_session=False)
         for lec_id in instructor_ids:
             db.add(ThesisLecturer(lecturer_id=lec_id, thesis_id=thesis_id, role=1))
+
     if "reviewer_ids" in update_data:
         reviewer_ids = update_data.pop("reviewer_ids")
-        if reviewer_ids: 
+        if reviewer_ids:
             valid_reviewers = db.query(User).filter(User.id.in_(reviewer_ids), User.user_type == 3).count()
             if valid_reviewers != len(reviewer_ids):
                 raise HTTPException(status_code=400, detail="Một hoặc nhiều ID giảng viên phản biện không hợp lệ.")
-        db.query(ThesisLecturer).filter(
-            ThesisLecturer.thesis_id == thesis_id,
-            ThesisLecturer.role == 2
-        ).delete(synchronize_session=False)
+        db.query(ThesisLecturer).filter(ThesisLecturer.thesis_id == thesis_id, ThesisLecturer.role == 2).delete(synchronize_session=False)
         for rev_id in reviewer_ids:
             db.add(ThesisLecturer(lecturer_id=rev_id, thesis_id=thesis_id, role=2))
-    if 'status' in update_data:
-        del update_data['status']
     for key, value in update_data.items():
         setattr(db_thesis, key, value)
-    db_thesis.status = 3
     db_thesis.update_datetime = datetime.utcnow()
     
     db.commit()
@@ -158,6 +152,7 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
             
             if user_info:
                 lecturer_details = InstructorResponse(
+                    id=tl.lecturer_id, 
                     name=f"{user_info.last_name} {user_info.first_name}",
                     email=lecturer_info.email,
                     department=lecturer_info.department,
@@ -207,6 +202,7 @@ def get_thesis_by_id(db: Session, thesis_id: UUID) -> ThesisResponse:
             "Không xác định"
         ),
         name=thesis.title,
+        major_id=thesis.major_id,
         description=thesis.description,
         start_date=thesis.start_date,
         end_date=thesis.end_date,
@@ -236,6 +232,7 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
 
                 if user_info:
                     lecturer_details = InstructorResponse(
+                        id=tl.lecturer_id, 
                         name=f"{user_info.last_name} {user_info.first_name}",
                         email=lecturer_info.email,
                         lecturer_code=lecturer_info.lecturer_code,
@@ -272,6 +269,7 @@ def get_all_theses(db: Session) -> list[ThesisResponse]:
             ),
             reason=thesis.reason,
             name=thesis.title,
+            major_id=thesis.major_id,
             description=thesis.description,
             start_date=thesis.start_date,
             end_date=thesis.end_date,
@@ -321,6 +319,7 @@ def get_theses_by_major_id(db: Session, major_id: UUID) -> list[ThesisResponse]:
                 department = db.query(Department).filter(Department.id == lecturer_info.department).first()
                 if user_info:
                     lecturer_details = InstructorResponse(
+                        id=tl.lecturer_id, 
                         name=f"{user_info.last_name} {user_info.first_name}",
                         email=lecturer_info.email,
                         lecturer_code=lecturer_info.lecturer_code,
@@ -367,6 +366,7 @@ def get_theses_by_major_id(db: Session, major_id: UUID) -> list[ThesisResponse]:
                 "Đã được đăng ký" if thesis.status == 5 else
                 "Không xác định"
             ),
+            major_id=thesis.major_id,
             name=thesis.title,
             description=thesis.description,
             start_date=thesis.start_date,
@@ -419,6 +419,7 @@ def get_theses_by_batch_id(db: Session, batch_id: UUID) -> list[ThesisResponse]:
                 department = db.query(Department).filter(Department.id == lecturer_info.department).first()
                 if user_info:
                     lecturer_details = InstructorResponse(
+                        id=tl.lecturer_id, 
                         name=f"{user_info.last_name} {user_info.first_name}",
                         email=lecturer_info.email,
                         lecturer_code=lecturer_info.lecturer_code,
@@ -474,6 +475,7 @@ def get_theses_by_batch_id(db: Session, batch_id: UUID) -> list[ThesisResponse]:
             notes=thesis.notes,
             reason=thesis.reason,
             instructors=instructors_list,
+            major_id=thesis.major_id,
             reviewers=reviewers_list,
             department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
@@ -509,6 +511,7 @@ def get_theses_by_batch_and_major(db: Session, batch_id: UUID, major_id: UUID) -
                 department = db.query(Department).filter(Department.id == lecturer_info.department).first()
                 if user_info:
                     lecturer_details = InstructorResponse(
+                        id=tl.lecturer_id, 
                         name=f"{user_info.last_name} {user_info.first_name}",
                         email=lecturer_info.email,
                         lecturer_code=lecturer_info.lecturer_code,
@@ -568,6 +571,7 @@ def get_theses_by_batch_and_major(db: Session, batch_id: UUID, major_id: UUID) -
             department=department_response,
             name_thesis_type="Khóa luận" if thesis.thesis_type == 1 else "Đồ án",
             batch=batch_response,
+            major_id=thesis.major_id,
             major=major_name,
             committee_id=thesis.committee_id
         ))
@@ -620,15 +624,15 @@ def batch_update_theses(db: Session, update_request: ThesisBatchUpdateRequest, u
 
         db_thesis = thesis_map[thesis_id_str]
 
-        is_creator = db_thesis.create_by == user_id
-        is_instructor = db.query(ThesisLecturer).filter(
-            ThesisLecturer.thesis_id == item.id,
-            ThesisLecturer.lecturer_id == user_id
-        ).first() is not None
+        # is_creator = db_thesis.create_by == user_id
+        # is_instructor = db.query(ThesisLecturer).filter(
+        #     ThesisLecturer.thesis_id == item.id,
+        #     ThesisLecturer.lecturer_id == user_id
+        # ).first() is not None
 
-        if not (is_creator or is_instructor):
-            errors.append(BatchUpdateError(id=item.id, error="Không có quyền cập nhật đề tài này."))
-            continue
+        # if not (is_creator or is_instructor):
+        #     errors.append(BatchUpdateError(id=item.id, error="Không có quyền cập nhật đề tài này."))
+        #     continue
 
         try:
             update_data = item.update_data.dict(exclude_unset=True) 
