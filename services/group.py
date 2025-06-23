@@ -292,6 +292,23 @@ def delete_group(db: Session, group_id: UUID, user_id: UUID):
     
     return {"message": "Đã xóa nhóm thành công."}
 
+def get_group_by_thesis_id(db: Session, thesis_id: UUID):
+    """
+    Lấy thông tin chi tiết của nhóm dựa vào ID của đề tài mà nhóm đó đã đăng ký.
+    """
+    # 1. Tìm nhóm trong CSDL dựa trên thesis_id
+    group = db.query(Group).filter(Group.thesis_id == thesis_id).first()
+    
+    # 2. Nếu không tìm thấy nhóm, báo lỗi 404
+    if not group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy nhóm nào đã đăng ký cho đề tài này."
+        )
+        
+    # 3. Nếu tìm thấy, tái sử dụng hàm đã có để lấy thông tin chi tiết của nhóm
+    return get_group_with_detailed_members(db, group.id)
+
 def register_thesis_for_group(db: Session, group_id: UUID, thesis_id: UUID, user_id: UUID):
     """Đăng ký một đề tài cho nhóm (chỉ nhóm trưởng)"""
     

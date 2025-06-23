@@ -3,7 +3,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from db.database import get_db
 from services.group import (
-    create_group, add_member, delete_group, get_all_groups_for_admin, get_all_groups_for_user, get_group_with_detailed_members, get_supervised_groups_by_lecturer, register_thesis_for_group, remove_member, transfer_leader, update_group_name
+    create_group, add_member, delete_group, get_all_groups_for_admin, get_all_groups_for_user, get_group_by_thesis_id, get_group_with_detailed_members, get_supervised_groups_by_lecturer, register_thesis_for_group, remove_member, transfer_leader, update_group_name
 )
 from schemas.group import GroupCreate, GroupMemberCreate, GroupMemberResponse, GroupResponse, GroupWithMembersResponse, MemberDetailResponse
 from routers.auth import PathChecker, get_current_user
@@ -77,6 +77,17 @@ def get_my_groups_details(db: Session = Depends(get_db), current_user: User = De
     """
     # Hàm service mới đã trả về một danh sách, nên chỉ cần return trực tiếp
     return get_all_groups_for_user(db, user_id=current_user.id)
+
+@router.get("/by-thesis/{thesis_id}", response_model=GroupWithMembersResponse)
+def get_group_by_thesis_id_endpoint(
+    thesis_id: UUID, 
+    db: Session = Depends(get_db), 
+    user: User = Depends(get_current_user)
+):
+    """
+    API để lấy thông tin nhóm theo ID của đề tài.
+    """
+    return get_group_by_thesis_id(db, thesis_id)
 
 @router.put("/{group_id}/name", response_model=GroupResponse)
 def update_group_name_endpoint(

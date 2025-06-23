@@ -5,7 +5,7 @@ from uuid import UUID
 from db.database import get_db
 from models.model import User
 from routers.auth import get_current_user # Hoặc PathChecker nếu cần
-from schemas.council import CouncilCreateWithTheses, CouncilDetailResponse, CouncilResponse
+from schemas.council import CouncilCreateWithTheses, CouncilDetailResponse, CouncilResponse, CouncilUpdate
 import services.council as council_service
 
 router = APIRouter(
@@ -50,3 +50,35 @@ def create_council_endpoint(
     # ==========================================
         
     return council_service.create_council_and_assign(db, council_data, current_user.id)
+
+@router.put("/{council_id}", response_model=CouncilResponse)
+def update_council_endpoint(
+    council_id: UUID,
+    council_data: CouncilUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Cập nhật thông tin hội đồng (yêu cầu quyền Admin hoặc Giảng viên)."""
+    if current_user.user_type not in [1, 3]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Admin hoặc Giảng viên mới có quyền thực hiện hành động này."
+        )
+    return council_service.update_council(db, council_id, council_data)
+
+@router.delete("/{council_id}", status_code=status.HTTP_200_OK)
+def delete_council_endpoint(
+    council_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Xóa một hội đồng (chỉ Admin).
+    """
+    # Chỉ Admin (user_type = 1) mới có quyền xóa
+    if current_user.user_type != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Admin mới có quyền thực hiện hành động này."
+        )
+    return council_service.delete_council(db, council_id)

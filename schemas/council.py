@@ -83,3 +83,12 @@ class CouncilResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class CouncilUpdate(BaseModel):
+    name: Optional[str] = None
+    major_id: Optional[UUID] = None
+    meeting_time: Optional[datetime] = None
+    location: Optional[str] = None
+    note: Optional[str] = None
+    members: Optional[List[CouncilMemberCreate]] = None
+    thesis_ids: Optional[List[UUID]] = None

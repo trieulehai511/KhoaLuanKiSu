@@ -31,8 +31,10 @@ class ThesisUpdate(BaseModel):
     lecturer_ids: Optional[List[UUID]] = None  #
     reviewer_ids: Optional[List[UUID]] = None 
     reason: Optional[str] = None
+    department_id: Optional[int] = None
 
 class InstructorResponse(BaseModel):
+    id: UUID
     name: str
     email: str
     lecturer_code: str
@@ -111,6 +113,7 @@ class ThesisResponse(BaseModel):
     instructors: List[InstructorResponse]
     reviewers: List[InstructorResponse] = []
     batch: BatchResponse
+    major_id: UUID
     major: str
     department: Optional[DepartmentResponse] = None 
     reason: Optional[str]
